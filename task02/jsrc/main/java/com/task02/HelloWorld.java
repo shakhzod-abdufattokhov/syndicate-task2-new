@@ -52,11 +52,6 @@ public class HelloWorld implements RequestHandler<Map<String, Object>, Map<Strin
 			response.put("statusCode", 500);
 			Map<String, String> responseBody = new HashMap<>();
 			responseBody.put("message", "Internal server error: " + e.getMessage());
-			try {
-				response.put("body", new ObjectMapper().writeValueAsString(responseBody));
-			} catch (Exception jsonException) {
-				response.put("body", "{\"message\": \"Internal server error\"}");
-			}
 		}
 
 		return response;
