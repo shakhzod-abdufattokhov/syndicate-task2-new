@@ -29,7 +29,7 @@ public class HelloWorld implements RequestHandler<Map<String, Object>, Map<Strin
 	@Override
 	public Map<String, Object> handleRequest(Map<String, Object> input, Context context) {
 		String path = (String) input.get("path");
-		String method = (String) input.get("httpMethod");
+		String method = (String) input.get("method");
 
 		if ("/hello".equals(path) && "GET".equalsIgnoreCase(method)) {
 			return createResponse(200, "Hello from Lambda");
