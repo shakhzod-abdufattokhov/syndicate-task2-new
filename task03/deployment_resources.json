@@ -37,9 +37,7 @@
   "task3_api": {
     "resource_type": "api_gateway",
     "deploy_stage": "api",
-    "dependencies": [
-      { "resource_name": "hello_word" }
-    ],
+    "dependencies": [],
     "resources": {
       "/hello": {
         "GET": {
