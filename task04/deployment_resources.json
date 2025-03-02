@@ -1,0 +1,75 @@
+{
+  "lambda-basic-execution": {
+    "policy_content": {
+      "Statement": [
+        {
+          "Action": [
+            "logs:CreateLogGroup",
+            "logs:CreateLogStream",
+            "logs:PutLogEvents",
+            "dynamodb:GetItem",
+            "dynamodb:Query",
+            "dynamodb:PutItem",
+            "dynamodb:Batch*",
+            "dynamodb:DeleteItem",
+            "ssm:PutParameter",
+            "ssm:GetParameter",
+            "kms:Decrypt",
+            "sqs:ReceiveMessage",
+            "sqs:DeleteMessage",
+            "sqs:GetQueueAttributes"
+          ],
+          "Effect": "Allow",
+          "Resource": "*"
+        }
+      ],
+      "Version": "2012-10-17"
+    },
+    "resource_type": "iam_policy",
+    "tags": {}
+  },
+  "sqs_handler-role": {
+    "predefined_policies": [],
+    "principal_service": "lambda",
+    "custom_policies": [
+      "lambda-basic-execution"
+    ],
+    "resource_type": "iam_role",
+    "tags": {}
+  },
+  "async_queue": {
+    "resource_type": "sqs_queue",
+    "fifo_queue": false,
+    "visibility_timeout": 30,
+    "delay_seconds": 0,
+    "maximum_message_size": 1024,
+    "message_retention_period": 60,
+    "receive_message_wait_time_seconds": 0,
+    "policy": {},
+    "redrive_policy": {},
+    "content_based_deduplication": false,
+    "tags": {}
+  },
+  "sqs_handler_lambda": {
+    "resource_type": "lambda",
+    "func_name": "sqs_handler",
+    "runtime": "java11",
+    "memory": 512,
+    "timeout": 30,
+    "iam_role_name": "sqs_handler-role",
+    "deployment_package": "bundles/task04_250302.142715/task04-1.0.0.jar",
+    "event_sources": [
+      {
+        "resource_type": "sqs_trigger",
+        "target_queue": "async_queue",
+        "batch_size": 10,
+        "batch_window": 1,
+        "function_response_types": [
+          "ReportBatchItemFailures"
+        ]
+      }
+    ]
+  }
+
+
+}
