@@ -25,7 +25,7 @@
     "resource_type": "iam_policy",
     "tags": {}
   },
-  "hello_word-role": {
+  "hello_world-role": {
     "predefined_policies": [],
     "principal_service": "lambda",
     "custom_policies": [
@@ -41,15 +41,18 @@
     "resources": {
       "/hello": {
         "GET": {
+          "authorization_type": "NONE",
           "integration_type": "lambda",
-          "lambda_name": "hello_word",
-          "authorizer": "NONE"
+          "lambda_name": "hello_world",
+          "api_key_required": false,
+          "method_request_parameters": {},
+          "integration_request_body_template": {},
+          "responses": [],
+          "integration_responses": [],
+          "default_error_pattern": true
         }
       }
     },
     "tags": {}
   }
-
-
-
 }
