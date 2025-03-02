@@ -50,26 +50,28 @@
     "content_based_deduplication": false,
     "tags": {}
   },
-  "sqs_handler_lambda": {
+  "lambda_function": {
+    "version": "1.0",
+    "name": "sqs_lambda_handler",
+    "lambda_path": "src/sqs_lambda_handler",
+    "func_name": "handler",
     "resource_type": "lambda",
-    "func_name": "sqs_handler",
-    "runtime": "java11",
-    "memory": 512,
-    "timeout": 30,
-    "iam_role_name": "sqs_handler-role",
-    "deployment_package": "bundles/task04_250302.142715/task04-1.0.0.jar",
+    "iam_arn_role": "sqs_handler-role",
+    "runtime": "java",
+    "memory": 256,
+    "timeout": 60,
     "event_sources": [
       {
         "resource_type": "sqs_trigger",
         "target_queue": "async_queue",
         "batch_size": 10,
-        "batch_window": 1,
-        "function_response_types": [
-          "ReportBatchItemFailures"
-        ]
+        "batch_window": 5,
+        "function_response_types": ["ReportBatchItemFailures"]
       }
-    ]
+    ],
+    "env_variables": {
+      "QUEUE_NAME": "async_queue"
+    },
+    "tags": {}
   }
-
-
 }
