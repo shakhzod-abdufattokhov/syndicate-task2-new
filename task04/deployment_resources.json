@@ -57,7 +57,7 @@
     "func_name": "handler",
     "resource_type": "lambda",
     "iam_arn_role": "sqs_handler-role",
-    "runtime": "java",
+    "runtime": "java11",
     "memory": 256,
     "timeout": 60,
     "event_sources": [
