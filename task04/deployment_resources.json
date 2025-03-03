@@ -7,12 +7,14 @@
             "logs:CreateLogGroup",
             "logs:CreateLogStream",
             "logs:PutLogEvents",
+            "dynamodb:GetItem",
+            "dynamodb:Query",
+            "dynamodb:PutItem",
+            "dynamodb:Batch*",
+            "dynamodb:DeleteItem",
             "ssm:PutParameter",
             "ssm:GetParameter",
-            "kms:Decrypt",
-            "sqs:ReceiveMessage",
-            "sqs:DeleteMessage",
-            "sqs:GetQueueAttributes"
+            "kms:Decrypt"
           ],
           "Effect": "Allow",
           "Resource": "*"
@@ -23,19 +25,22 @@
     "resource_type": "iam_policy",
     "tags": {}
   },
+
   "sqs_handler-role": {
     "predefined_policies": [],
     "principal_service": "lambda",
     "custom_policies": [
-      "lambda-basic-execution"
+      "lambda-basic-execution",
+      "sqs-consume-policy"
     ],
     "resource_type": "iam_role",
     "tags": {}
   },
+
   "async_queue": {
     "resource_type": "sqs_queue",
     "fifo_queue": false,
-    "visibility_timeout": 30,
+    "visibility_timeout": 310,
     "delay_seconds": 0,
     "maximum_message_size": 1024,
     "message_retention_period": 60,
@@ -44,5 +49,64 @@
     "redrive_policy": {},
     "content_based_deduplication": false,
     "tags": {}
+  },
+
+  "sqs-consume-policy": {
+    "policy_content": {
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Action": [
+            "sqs:ReceiveMessage",
+            "sqs:DeleteMessage",
+            "sqs:GetQueueAttributes",
+            "sqs:GetQueueUrl"
+          ],
+          "Resource": "arn:aws:sqs:eu-central-1:905418349556:cmtr-2028f2b4-async_queue"
+        }
+      ],
+      "Version": "2012-10-17"
+    },
+    "resource_type": "iam_policy",
+    "tags": {}
+  },
+
+
+  "sns_handler-role": {
+    "predefined_policies": [],
+    "principal_service": "lambda",
+    "custom_policies": [
+      "lambda-basic-execution",
+      "sns-consume-policy"
+    ],
+    "resource_type": "iam_role",
+    "tags": {}
+  },
+
+  "lambda_topic": {
+    "resource_type": "sns_topic",
+    "region": "eu-central-1",
+    "event_sources": [],
+    "tags": {}
+  },
+
+  "sns-consume-policy": {
+    "policy_content": {
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Action": [
+            "sns:Subscribe",
+            "sns:Receive",
+            "sns:ListSubscriptionsByTopic"
+          ],
+          "Resource": "arn:aws:sns:eu-central-1:905418349556:lambda_topic"
+        }
+      ],
+      "Version": "2012-10-17"
+    },
+    "resource_type": "iam_policy",
+    "tags": {}
   }
+
 }
