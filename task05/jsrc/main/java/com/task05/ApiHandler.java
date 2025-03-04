@@ -26,7 +26,7 @@ import java.util.UUID;
 )
 public class ApiHandler implements RequestHandler<Map<String, Object>, Map<String, Object>> {
 
-	private static final String TABLE_NAME = "cmtr-2028f2b4-Events-tgnq";
+	private static final String TABLE_NAME = "cmtr-2028f2b4-Events";
 	private final AmazonDynamoDB client = AmazonDynamoDBClientBuilder.defaultClient();
 	private final DynamoDB dynamoDB = new DynamoDB(client);
 	private final ObjectMapper objectMapper = new ObjectMapper();
@@ -58,7 +58,6 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
 			table.putItem(item);
 			context.getLogger().log("Successfully saved event: " + eventId);
 
-			// Construct response
 			Map<String, Object> event = new HashMap<>();
 			event.put("id", eventId);
 			event.put("principalId", principalId);
@@ -69,7 +68,7 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
 
 		} catch (Exception e) {
 			context.getLogger().log("Error processing request: " + e.getMessage());
-			return generateErrorResponse(500, "Internal Server Error: " + e.getMessage());
+			return generateErrorResponse(500, "Internal Server Errorrrrrr: " + e.getMessage());
 		}
 	}
 
