@@ -27,6 +27,13 @@ import java.util.UUID;
 public class ApiHandler implements RequestHandler<Map<String, Object>, Map<String, Object>> {
 
 	private static final String TABLE_NAME = System.getenv("target_table");
+
+	static {
+		if (TABLE_NAME == null || TABLE_NAME.isEmpty()) {
+			throw new RuntimeException("❌ ERROR: Environment variable 'target_table' is not set!");
+		}
+	}
+
 	private final AmazonDynamoDB client = AmazonDynamoDBClientBuilder.defaultClient();
 	private final DynamoDB dynamoDB = new DynamoDB(client);
 	private final ObjectMapper objectMapper = new ObjectMapper();
@@ -34,25 +41,30 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
 	@Override
 	public Map<String, Object> handleRequest(Map<String, Object> request, Context context) {
 		context.getLogger().log("Received request: " + request);
-		context.getLogger().log("Using DynamoDB Table: " + TABLE_NAME);
+		context.getLogger().log("Using DynamoDB Table: " + (TABLE_NAME != null ? TABLE_NAME : "❌ NOT SET"));
 
-		// Ensure TABLE_NAME is set
-		if (TABLE_NAME == null || TABLE_NAME.isEmpty()) {
-			return generateErrorResponse(500, "Environment variable TARGET_TABLE is not set!");
+		// Validate request
+		if (!request.containsKey("principalId") || !request.containsKey("content")) {
+			return generateErrorResponse(400, "Invalid request: Missing required fields.");
 		}
 
+		// Safe parsing of principalId
+		Object principalIdObj = request.get("principalId");
+		if (principalIdObj == null) {
+			return generateErrorResponse(400, "Invalid request: Missing 'principalId'");
+		}
+		int principalId;
 		try {
-			// Validate request
-			if (!request.containsKey("principalId") || !request.containsKey("content")) {
-				return generateErrorResponse(400, "Invalid request: Missing required fields.");
-			}
+			principalId = Integer.parseInt(principalIdObj.toString());
+		} catch (NumberFormatException e) {
+			return generateErrorResponse(400, "Invalid request: 'principalId' must be a number");
+		}
 
-			// Extract data
-			int principalId = (int) request.get("principalId");
-			JsonNode content = objectMapper.valueToTree(request.get("content"));
-			String eventId = UUID.randomUUID().toString();
-			String createdAt = Instant.now().toString();
+		JsonNode content = objectMapper.valueToTree(request.get("content"));
+		String eventId = UUID.randomUUID().toString();
+		String createdAt = Instant.now().toString();
 
+		try {
 			// Save to DynamoDB
 			Table table = dynamoDB.getTable(TABLE_NAME);
 			Item item = new Item()
@@ -62,7 +74,7 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
 					.withMap("body", objectMapper.convertValue(content, Map.class));
 
 			table.putItem(item);
-			context.getLogger().log("Successfully saved event: " + eventId);
+			context.getLogger().log("✅ Successfully saved event: " + eventId);
 
 			Map<String, Object> event = new HashMap<>();
 			event.put("id", eventId);
@@ -73,7 +85,7 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
 			return generateSuccessResponse(event);
 
 		} catch (Exception e) {
-			context.getLogger().log("Error processing request: " + e.getMessage());
+			context.getLogger().log("❌ Error processing request: " + e.getMessage());
 			return generateErrorResponse(500, "Internal Server Error: " + e.getMessage());
 		}
 	}
