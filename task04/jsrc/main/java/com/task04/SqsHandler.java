@@ -1,8 +1,12 @@
+package com.task04;
+
 import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.syndicate.deployment.annotations.events.SqsTriggerEventSource;
 import com.syndicate.deployment.annotations.lambda.LambdaHandler;
 import com.syndicate.deployment.model.RetentionSetting;
+import com.amazonaws.services.lambda.runtime.LambdaLogger;
+
 import java.util.HashMap;
 import java.util.Map;
 
@@ -14,14 +18,16 @@ import java.util.Map;
 		logsExpiration = RetentionSetting.SYNDICATE_ALIASES_SPECIFIED
 )
 @SqsTriggerEventSource(targetQueue = "async_queue", batchSize = 123)
-public class SqsHandler implements RequestHandler<Map<String, Object>, Map<String, Object>> {
+public class SqsHandler implements RequestHandler<Object, Map<String, Object>> {
 
-	public Map<String, Object> handleRequest(Map<String, Object> event, Context context) {
-		context.getLogger().log("Received SQS event: " + event);
+	public Map<String, Object> handleRequest(Object request, Context context) {
+		context.getLogger().log("Received SQS message: " + request.toString());
+		System.out.println("Received SQS message: " + request.toString()); // Ensure logs appear in CloudWatch
 
 		Map<String, Object> resultMap = new HashMap<>();
 		resultMap.put("statusCode", 200);
-		resultMap.put("message", "Processed SQS event");
+		resultMap.put("message", "Hello from Lambda");
 		return resultMap;
 	}
+
 }
