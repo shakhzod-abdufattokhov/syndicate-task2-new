@@ -14,10 +14,6 @@ import com.syndicate.deployment.annotations.environment.EnvironmentVariables;
 import com.syndicate.deployment.annotations.lambda.LambdaHandler;
 import com.syndicate.deployment.model.RetentionSetting;
 
-
-
-
-
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
@@ -33,7 +29,8 @@ import java.util.UUID;
 
 @EnvironmentVariables(value = {
         @EnvironmentVariable(key = "region", value = "${region}"),
-        @EnvironmentVariable(key = "table", value = "${target_table}")})
+        @EnvironmentVariable(key = "table", value = "${target_table}")
+})
 
 public class ApiHandler implements RequestHandler<Map<String, Object>, Map<String, Object>> {
 
@@ -64,22 +61,18 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
                     .withPrimaryKey("id", eventId)
                     .withNumber("principalId", principalId)
                     .withString("createdAt", createdAt)
-                    .withMap("body", objectMapper.convertValue(content, Map.class));
+                    .withString("body", objectMapper.writeValueAsString(content)); // Store as JSON String
 
             table.putItem(item);
             context.getLogger().log("Successfully saved event: " + eventId);
 
-            // 🟢 Ensure response structure matches expectations
-            Map<String, Object> response = new HashMap<>();
-            response.put("statusCode", 201);
-            response.put("body", Map.of(
-                    "id", eventId,
-                    "principalId", principalId,
-                    "createdAt", createdAt,
-                    "body", content
-            ));
+            Map<String, Object> event = new HashMap<>();
+            event.put("id", eventId);
+            event.put("principalId", principalId);
+            event.put("createdAt", createdAt);
+            event.put("body", content);
 
-            return response; // ✅ Ensure the response follows expected structure
+            return generateSuccessResponse(event);
 
         } catch (Exception e) {
             context.getLogger().log("Error processing request: " + e.getMessage());
@@ -87,18 +80,19 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
         }
     }
 
-
     private Map<String, Object> generateSuccessResponse(Map<String, Object> event) {
         Map<String, Object> response = new HashMap<>();
         response.put("statusCode", 201);
-        response.put("event", event);
+        response.put("headers", Map.of("Content-Type", "application/json"));
+        response.put("body", event); // Ensure API Gateway-compatible response
         return response;
     }
 
     private Map<String, Object> generateErrorResponse(int statusCode, String message) {
         Map<String, Object> response = new HashMap<>();
         response.put("statusCode", statusCode);
-        response.put("error", message);
+        response.put("headers", Map.of("Content-Type", "application/json"));
+        response.put("body", Map.of("error", message));
         return response;
     }
 }
