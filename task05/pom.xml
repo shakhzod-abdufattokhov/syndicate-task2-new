@@ -46,6 +46,21 @@
         </dependency>
 
 
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-core</artifactId>
+            <version>2.15.0</version> <!-- Ensure it's the same as databind -->
+        </dependency>
+
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-annotations</artifactId>
+            <version>2.15.0</version> <!-- Ensure it's the same -->
+        </dependency>
+
+
+
+
 
     </dependencies>
 
