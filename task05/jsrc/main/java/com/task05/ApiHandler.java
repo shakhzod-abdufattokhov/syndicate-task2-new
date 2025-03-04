@@ -26,7 +26,7 @@ import java.util.UUID;
 )
 public class ApiHandler implements RequestHandler<Map<String, Object>, Map<String, Object>> {
 
-	private static final String TABLE_NAME = "cmtr-2028f2b4-Events";
+	private static final String TABLE_NAME = System.getenv("target_table");
 	private final AmazonDynamoDB client = AmazonDynamoDBClientBuilder.defaultClient();
 	private final DynamoDB dynamoDB = new DynamoDB(client);
 	private final ObjectMapper objectMapper = new ObjectMapper();
@@ -34,6 +34,12 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
 	@Override
 	public Map<String, Object> handleRequest(Map<String, Object> request, Context context) {
 		context.getLogger().log("Received request: " + request);
+		context.getLogger().log("Using DynamoDB Table: " + TABLE_NAME);
+
+		// Ensure TABLE_NAME is set
+		if (TABLE_NAME == null || TABLE_NAME.isEmpty()) {
+			return generateErrorResponse(500, "Environment variable TARGET_TABLE is not set!");
+		}
 
 		try {
 			// Validate request
@@ -68,7 +74,7 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
 
 		} catch (Exception e) {
 			context.getLogger().log("Error processing request: " + e.getMessage());
-			return generateErrorResponse(500, "Internal Server Errorrrrrr: " + e.getMessage());
+			return generateErrorResponse(500, "Internal Server Error: " + e.getMessage());
 		}
 	}
 
