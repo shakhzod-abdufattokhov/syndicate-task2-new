@@ -6,11 +6,11 @@ import com.amazonaws.services.dynamodbv2.model.AttributeValue;
 import com.amazonaws.services.dynamodbv2.model.PutItemRequest;
 import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.syndicate.deployment.annotations.lambda.LambdaHandler;
 import com.syndicate.deployment.model.RetentionSetting;
 
-import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -31,50 +31,57 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
 	@Override
 	public Map<String, Object> handleRequest(Map<String, Object> request, Context context) {
 		try {
-			// Extract principalId and content from the request
-			int principalId = (int) request.get("principalId");
-			Map<String, String> content = (Map<String, String>) request.get("content");
+			// Extract and validate `principalId`
+			Object principalIdObject = request.get("principalId");
+			if (principalIdObject == null) {
+				return createErrorResponse(400, "Missing required field: principalId");
+			}
+			int principalId = Integer.parseInt(principalIdObject.toString());
 
-			// Generate UUID v4 for `id`
+			// Extract and validate `content`
+			Object contentObject = request.get("content");
+			@SuppressWarnings("unchecked")
+			Map<String, String> content = contentObject instanceof Map ? (Map<String, String>) contentObject : new HashMap<>();
+
+			// Generate UUID for `id`
 			String id = UUID.randomUUID().toString();
 
-			// Get current timestamp in ISO 8601 format
-			String createdAt = Instant.now().toString();
+			// Save to DynamoDB
+			saveToDynamoDB(id, principalId, content, context);
 
-			// Save event to DynamoDB
-			saveToDynamoDB(id, principalId, createdAt, content);
-
-			// Construct response
-			Map<String, Object> response = new HashMap<>();
-			response.put("statusCode", 201);
-			response.put("event", Map.of(
-					"id", id,
-					"principalId", principalId,
-					"createdAt", createdAt,
-					"body", content
-			));
-
-			return response;
+			// Construct successful response
+			return Map.of(
+					"statusCode", 201,
+					"event", Map.of(
+							"id", id,
+							"principalId", principalId,
+							"body", content
+					)
+			);
+		} catch (NumberFormatException e) {
+			return createErrorResponse(400, "Invalid principalId format. Must be a number.");
 		} catch (Exception e) {
 			context.getLogger().log("Error: " + e.getMessage());
-			return Map.of("statusCode", 500, "error", "Internal Server Error");
+			return createErrorResponse(500, "Internal Server Error");
 		}
 	}
 
-	private void saveToDynamoDB(String id, int principalId, String createdAt, Map<String, String> content) {
-		Map<String, AttributeValue> item = new HashMap<>();
-		item.put("id", new AttributeValue(id));
-		item.put("principalId", new AttributeValue().withN(String.valueOf(principalId)));
-		item.put("createdAt", new AttributeValue(createdAt));
-		item.put("body", new AttributeValue().withM(convertMapToAttributeValue(content)));
+	private void saveToDynamoDB(String id, int principalId, Map<String, String> content, Context context) {
+		try {
+			Map<String, AttributeValue> item = new HashMap<>();
+			item.put("id", new AttributeValue(id));
+			item.put("principalId", new AttributeValue().withN(String.valueOf(principalId)));
+			item.put("body", new AttributeValue().withS(objectMapper.writeValueAsString(content))); // Convert content to JSON String
 
-		PutItemRequest putItemRequest = new PutItemRequest().withTableName(TABLE_NAME).withItem(item);
-		dynamoDB.putItem(putItemRequest);
+			PutItemRequest putItemRequest = new PutItemRequest().withTableName(TABLE_NAME).withItem(item);
+			dynamoDB.putItem(putItemRequest);
+		} catch (JsonProcessingException e) {
+			context.getLogger().log("JSON serialization error: " + e.getMessage());
+			throw new RuntimeException("Failed to serialize content to JSON", e);
+		}
 	}
 
-	private Map<String, AttributeValue> convertMapToAttributeValue(Map<String, String> map) {
-		Map<String, AttributeValue> attributeMap = new HashMap<>();
-		map.forEach((key, value) -> attributeMap.put(key, new AttributeValue(value)));
-		return attributeMap;
+	private Map<String, Object> createErrorResponse(int statusCode, String message) {
+		return Map.of("statusCode", statusCode, "error", message);
 	}
 }
