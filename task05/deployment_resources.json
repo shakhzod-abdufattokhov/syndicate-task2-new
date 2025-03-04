@@ -64,16 +64,21 @@
     "global_indexes": [],
     "autoscaling": [
       {
-        "type": "WRITE",
+        "resource_name": "cmtr-2028f2b4-Events",
+        "dimension": "dynamodb:table:WriteCapacityUnits",
         "min_capacity": 1,
-        "max_capacity": 5
+        "max_capacity": 5,
+        "role_name": "DynamoDBAutoscaleRole"
       },
       {
-        "type": "READ",
+        "resource_name": "cmtr-2028f2b4-Events",
+        "dimension": "dynamodb:table:ReadCapacityUnits",
         "min_capacity": 1,
-        "max_capacity": 5
+        "max_capacity": 5,
+        "role_name": "DynamoDBAutoscaleRole"
       }
     ],
+
     "tags": {}
   }
 
