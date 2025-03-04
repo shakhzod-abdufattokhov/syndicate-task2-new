@@ -26,12 +26,10 @@ import java.util.UUID;
         aliasName = "${lambdas_alias_name}",
         logsExpiration = RetentionSetting.SYNDICATE_ALIASES_SPECIFIED
 )
-
 @EnvironmentVariables(value = {
         @EnvironmentVariable(key = "region", value = "${region}"),
         @EnvironmentVariable(key = "table", value = "${target_table}")
 })
-
 public class ApiHandler implements RequestHandler<Map<String, Object>, Map<String, Object>> {
 
     private static final String TABLE_NAME = System.getenv("table");
@@ -44,24 +42,21 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
         context.getLogger().log("Received request: " + request);
 
         try {
-            // Validate request
             if (!request.containsKey("principalId") || !request.containsKey("content")) {
                 return generateErrorResponse(400, "Invalid request: Missing required fields.");
             }
 
-            // Extract data
             int principalId = (int) request.get("principalId");
             JsonNode content = objectMapper.valueToTree(request.get("content"));
             String eventId = UUID.randomUUID().toString();
             String createdAt = Instant.now().toString();
 
-            // Save to DynamoDB
             Table table = dynamoDB.getTable(TABLE_NAME);
             Item item = new Item()
                     .withPrimaryKey("id", eventId)
                     .withNumber("principalId", principalId)
                     .withString("createdAt", createdAt)
-                    .withString("body", objectMapper.writeValueAsString(content)); // Store as JSON String
+                    .withMap("body", objectMapper.convertValue(content, Map.class));
 
             table.putItem(item);
             context.getLogger().log("Successfully saved event: " + eventId);
@@ -70,29 +65,23 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
             event.put("id", eventId);
             event.put("principalId", principalId);
             event.put("createdAt", createdAt);
-            event.put("body", content);
+            event.put("body", objectMapper.convertValue(content, Map.class));
 
-            return generateSuccessResponse(event);
+            Map<String, Object> response = new HashMap<>();
+            response.put("statusCode", 201);
+            response.put("event", event);
 
+            return response;
         } catch (Exception e) {
-            context.getLogger().log("Error processing request: " + e.getMessage());
-            return generateErrorResponse(500, "Internal Server Error: " + e.getMessage());
+            context.getLogger().log("Error: " + e.getMessage());
+            return generateErrorResponse(500, "Internal Server Error");
         }
     }
 
-    private Map<String, Object> generateSuccessResponse(Map<String, Object> event) {
-        Map<String, Object> response = new HashMap<>();
-        response.put("statusCode", 201);
-        response.put("headers", Map.of("Content-Type", "application/json"));
-        response.put("body", event); // Ensure API Gateway-compatible response
-        return response;
-    }
-
     private Map<String, Object> generateErrorResponse(int statusCode, String message) {
-        Map<String, Object> response = new HashMap<>();
-        response.put("statusCode", statusCode);
-        response.put("headers", Map.of("Content-Type", "application/json"));
-        response.put("body", Map.of("error", message));
-        return response;
+        Map<String, Object> errorResponse = new HashMap<>();
+        errorResponse.put("statusCode", statusCode);
+        errorResponse.put("error", message);
+        return errorResponse;
     }
 }

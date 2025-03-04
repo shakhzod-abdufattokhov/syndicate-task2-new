@@ -56,29 +56,13 @@
     },
     "tags": {}
   },
-  "Events": {
+  "${target_table}": {
     "resource_type": "dynamodb_table",
     "hash_key_name": "id",
     "hash_key_type": "S",
     "read_capacity": 1,
     "write_capacity": 1,
     "global_indexes": [],
-    "autoscaling": [
-      {
-        "resource_name": "cmtr-2028f2b4-Events",
-        "dimension": "dynamodb:table:WriteCapacityUnits",
-        "min_capacity": 1,
-        "max_capacity": 5,
-        "role_name": "DynamoDBAutoscaleRole"
-      },
-      {
-        "resource_name": "cmtr-2028f2b4-Events",
-        "dimension": "dynamodb:table:ReadCapacityUnits",
-        "min_capacity": 1,
-        "max_capacity": 5,
-        "role_name": "DynamoDBAutoscaleRole"
-      }
-    ],
 
     "tags": {}
   }
