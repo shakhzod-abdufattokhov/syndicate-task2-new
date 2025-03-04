@@ -31,19 +31,19 @@
             <artifactId>deployment-configuration-annotations</artifactId>
             <version>${syndicate.java.plugin.version}</version>
         </dependency>
-
-        <dependency>
-            <groupId>software.amazon.awssdk</groupId>
-            <artifactId>dynamodb</artifactId>
-            <version>2.20.126</version> <!-- Use the latest version -->
-        </dependency>
-
         <dependency>
             <groupId>com.amazonaws</groupId>
             <artifactId>aws-java-sdk-dynamodb</artifactId>
-            <version>1.12.654</version> <!-- Use the latest version -->
+            <version>1.12.780</version>
         </dependency>
 
+
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>2.16.1</version>
+            <scope>provided</scope>
+        </dependency>
 
     </dependencies>
 
