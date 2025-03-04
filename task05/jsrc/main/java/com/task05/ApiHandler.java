@@ -7,8 +7,6 @@ import com.amazonaws.services.dynamodbv2.document.Table;
 import com.amazonaws.services.dynamodbv2.document.Item;
 import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.syndicate.deployment.annotations.environment.EnvironmentVariable;
 import com.syndicate.deployment.annotations.environment.EnvironmentVariables;
 import com.syndicate.deployment.annotations.lambda.LambdaHandler;
@@ -35,7 +33,6 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
     private static final String TABLE_NAME = System.getenv("table");
     private final AmazonDynamoDB client = AmazonDynamoDBClientBuilder.defaultClient();
     private final DynamoDB dynamoDB = new DynamoDB(client);
-    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
     public Map<String, Object> handleRequest(Map<String, Object> request, Context context) {
@@ -46,26 +43,37 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
                 return generateErrorResponse(400, "Invalid request: Missing required fields.");
             }
 
-            int principalId = (int) request.get("principalId");
-            JsonNode content = objectMapper.valueToTree(request.get("content"));
+            // Extract values safely
+            int principalId = Integer.parseInt(request.get("principalId").toString());
+            Object contentObj = request.get("content");
+
+            if (!(contentObj instanceof Map)) {
+                return generateErrorResponse(400, "Invalid content format. Expected JSON object.");
+            }
+
+            Map<String, Object> content = (Map<String, Object>) contentObj;
+
+            // Generate required values
             String eventId = UUID.randomUUID().toString();
             String createdAt = Instant.now().toString();
 
+            // Save to DynamoDB
             Table table = dynamoDB.getTable(TABLE_NAME);
             Item item = new Item()
                     .withPrimaryKey("id", eventId)
                     .withNumber("principalId", principalId)
                     .withString("createdAt", createdAt)
-                    .withMap("body", objectMapper.convertValue(content, Map.class));
+                    .withMap("body", content);
 
             table.putItem(item);
             context.getLogger().log("Successfully saved event: " + eventId);
 
+            // Prepare Response
             Map<String, Object> event = new HashMap<>();
             event.put("id", eventId);
             event.put("principalId", principalId);
             event.put("createdAt", createdAt);
-            event.put("body", objectMapper.convertValue(content, Map.class));
+            event.put("body", content);
 
             Map<String, Object> response = new HashMap<>();
             response.put("statusCode", 201);
