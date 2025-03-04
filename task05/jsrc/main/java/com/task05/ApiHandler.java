@@ -3,10 +3,11 @@ package com.task05;
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDB;
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDBClientBuilder;
 import com.amazonaws.services.dynamodbv2.document.DynamoDB;
-import com.amazonaws.services.dynamodbv2.document.Item;
 import com.amazonaws.services.dynamodbv2.document.Table;
+import com.amazonaws.services.dynamodbv2.document.Item;
 import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.syndicate.deployment.annotations.lambda.LambdaHandler;
 import com.syndicate.deployment.model.RetentionSetting;
@@ -25,58 +26,64 @@ import java.util.UUID;
 )
 public class ApiHandler implements RequestHandler<Map<String, Object>, Map<String, Object>> {
 
-	private static final String TABLE_NAME = "Events";
-	private static final AmazonDynamoDB client = AmazonDynamoDBClientBuilder.defaultClient();
-	private static final DynamoDB dynamoDB = new DynamoDB(client);
-	private static final ObjectMapper objectMapper = new ObjectMapper();
+	private static final String TABLE_NAME = "cmtr-2028f2b4-Events-tgnq";
+	private final AmazonDynamoDB client = AmazonDynamoDBClientBuilder.defaultClient();
+	private final DynamoDB dynamoDB = new DynamoDB(client);
+	private final ObjectMapper objectMapper = new ObjectMapper();
 
 	@Override
-	public Map<String, Object> handleRequest(Map<String, Object> input, Context context) {
-		Map<String, Object> response = new HashMap<>();
+	public Map<String, Object> handleRequest(Map<String, Object> request, Context context) {
+		context.getLogger().log("Received request: " + request);
 
 		try {
-			// Validate input
-			if (!input.containsKey("principalId") || !input.containsKey("content")) {
-				response.put("statusCode", 400);
-				response.put("error", "Missing required fields: principalId or content");
-				return response;
+			// Validate request
+			if (!request.containsKey("principalId") || !request.containsKey("content")) {
+				return generateErrorResponse(400, "Invalid request: Missing required fields.");
 			}
 
-			// Extract request data
-			int principalId = (int) input.get("principalId");
-			Map<String, String> content = (Map<String, String>) input.get("content");
-
-			// Generate event data
+			// Extract data
+			int principalId = (int) request.get("principalId");
+			JsonNode content = objectMapper.valueToTree(request.get("content"));
 			String eventId = UUID.randomUUID().toString();
 			String createdAt = Instant.now().toString();
 
-			// Create a new event item
-			Item eventItem = new Item()
+			// Save to DynamoDB
+			Table table = dynamoDB.getTable(TABLE_NAME);
+			Item item = new Item()
 					.withPrimaryKey("id", eventId)
 					.withNumber("principalId", principalId)
 					.withString("createdAt", createdAt)
-					.withMap("body", content);
+					.withMap("body", objectMapper.convertValue(content, Map.class));
 
-			// Save to DynamoDB
-			Table table = dynamoDB.getTable(TABLE_NAME);
-			table.putItem(eventItem);
+			table.putItem(item);
+			context.getLogger().log("Successfully saved event: " + eventId);
 
 			// Construct response
-			Map<String, Object> eventResponse = new HashMap<>();
-			eventResponse.put("id", eventId);
-			eventResponse.put("principalId", principalId);
-			eventResponse.put("createdAt", createdAt);
-			eventResponse.put("body", content);
+			Map<String, Object> event = new HashMap<>();
+			event.put("id", eventId);
+			event.put("principalId", principalId);
+			event.put("createdAt", createdAt);
+			event.put("body", content);
 
-			response.put("statusCode", 201);
-			response.put("event", eventResponse);
+			return generateSuccessResponse(event);
 
 		} catch (Exception e) {
 			context.getLogger().log("Error processing request: " + e.getMessage());
-			response.put("statusCode", 500);
-			response.put("error", "Internal Server Error");
+			return generateErrorResponse(500, "Internal Server Error: " + e.getMessage());
 		}
+	}
 
+	private Map<String, Object> generateSuccessResponse(Map<String, Object> event) {
+		Map<String, Object> response = new HashMap<>();
+		response.put("statusCode", 201);
+		response.put("event", event);
+		return response;
+	}
+
+	private Map<String, Object> generateErrorResponse(int statusCode, String message) {
+		Map<String, Object> response = new HashMap<>();
+		response.put("statusCode", statusCode);
+		response.put("error", message);
 		return response;
 	}
 }

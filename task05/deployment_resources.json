@@ -62,7 +62,19 @@
     "read_capacity": 1,
     "write_capacity": 1,
     "global_indexes": [],
-    "autoscaling": [],
+    "autoscaling": [
+      {
+        "type": "WRITE",
+        "min_capacity": 1,
+        "max_capacity": 5
+      },
+      {
+        "type": "READ",
+        "min_capacity": 1,
+        "max_capacity": 5
+      }
+    ],
     "tags": {}
   }
+
 }
