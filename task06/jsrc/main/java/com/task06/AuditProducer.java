@@ -64,20 +64,30 @@ public class AuditProducer implements RequestHandler<Map<String, Object>, Map<St
 				Map<String, Object> keys = (Map<String, Object>) dynamodb.get("Keys");
 				Map<String, Object> newImage = (Map<String, Object>) dynamodb.get("NewImage");
 
-				if (keys == null || !keys.containsKey("key")) continue;
+				if (keys == null || !keys.containsKey("key")) {
+					context.getLogger().log("Skipping record, missing key field.");
+					continue;
+				}
+
 				String itemKey = extractStringValue(keys.get("key"));
 				String modificationTime = Instant.now().toString();
-				Map<String, AttributeValue> newValue = newImage != null ? extractImage(newImage) : null;
+				Map<String, AttributeValue> newValue = newImage != null ? extractImage(newImage) : new HashMap<>();
 
+				// Create an audit entry with the required "id" field
 				Map<String, AttributeValue> auditEntry = new HashMap<>();
+				auditEntry.put("id", AttributeValue.builder().s(UUID.randomUUID().toString()).build()); // Ensuring partition key
 				auditEntry.put("audit_id", AttributeValue.builder().s(UUID.randomUUID().toString()).build());
 				auditEntry.put("itemKey", AttributeValue.builder().s(itemKey).build());
 				auditEntry.put("modificationTime", AttributeValue.builder().s(modificationTime).build());
 
-				if (newValue != null) {
-					auditEntry.put("newValue", AttributeValue.builder().m(newValue).build());  // Fix here
+				// Flatten the "newValue" attributes into the audit entry
+				if (!newValue.isEmpty()) {
+					for (Map.Entry<String, AttributeValue> entry : newValue.entrySet()) {
+						auditEntry.put("newValue_" + entry.getKey(), entry.getValue());
+					}
 				}
 
+				// Save to DynamoDB
 				PutItemRequest putItemRequest = PutItemRequest.builder()
 						.tableName(AUDIT_TABLE)
 						.item(auditEntry)
@@ -115,5 +125,4 @@ public class AuditProducer implements RequestHandler<Map<String, Object>, Map<St
 		}
 		return attributeValueMap;
 	}
-
 }
