@@ -74,13 +74,17 @@ public class AuditProducer implements RequestHandler<Map<String, Object>, Map<St
 				String itemKey = extractStringValue(keys.get("key"));
 				String modificationTime = Instant.now().toString();
 
-				// Extract newValue correctly
-				Map<String, Object> formattedNewValue = new LinkedHashMap<>();
-				if (newImage != null) {
-					formattedNewValue.put("key", itemKey);
-					formattedNewValue.put("value", extractSingleValue(newImage.get("value")));
-				} else {
-					context.getLogger().log("[WARNING] No 'NewImage' found, setting newValue to null.");
+				// Construct newValue as a DynamoDB Map (M)
+				Map<String, AttributeValue> formattedNewValue = new HashMap<>();
+				formattedNewValue.put("key", AttributeValue.builder().s(itemKey).build());
+
+				if (newImage != null && newImage.containsKey("value")) {
+					Object extractedValue = extractSingleValue(newImage.get("value"));
+					if (extractedValue instanceof String) {
+						formattedNewValue.put("value", AttributeValue.builder().s((String) extractedValue).build());
+					} else if (extractedValue instanceof Integer) {
+						formattedNewValue.put("value", AttributeValue.builder().n(String.valueOf(extractedValue)).build());
+					}
 				}
 
 				// Construct audit entry
@@ -90,9 +94,9 @@ public class AuditProducer implements RequestHandler<Map<String, Object>, Map<St
 				auditEntry.put("itemKey", AttributeValue.builder().s(itemKey).build());
 				auditEntry.put("modificationTime", AttributeValue.builder().s(modificationTime).build());
 
-				// Correctly format newValue as JSON
+				// Store newValue as an object (M) instead of a string
 				if (!formattedNewValue.isEmpty()) {
-					auditEntry.put("newValue", AttributeValue.builder().s(convertToJson(formattedNewValue)).build());
+					auditEntry.put("newValue", AttributeValue.builder().m(formattedNewValue).build());
 				}
 
 				// Save to DynamoDB
@@ -130,24 +134,5 @@ public class AuditProducer implements RequestHandler<Map<String, Object>, Map<St
 			}
 		}
 		return null;
-	}
-
-	private String convertToJson(Map<String, Object> map) {
-		StringBuilder jsonBuilder = new StringBuilder("{");
-		boolean first = true;
-		for (Map.Entry<String, Object> entry : map.entrySet()) {
-			if (!first) {
-				jsonBuilder.append(", ");
-			}
-			jsonBuilder.append("\"").append (entry.getKey()).append("\": ");
-			if (entry.getValue() instanceof String) {
-				jsonBuilder.append("\"").append(entry.getValue()).append("\"");
-			} else {
-				jsonBuilder.append(entry.getValue());
-			}
-			first = false;
-		}
-		jsonBuilder.append("}");
-		return jsonBuilder.toString();
 	}
 }
