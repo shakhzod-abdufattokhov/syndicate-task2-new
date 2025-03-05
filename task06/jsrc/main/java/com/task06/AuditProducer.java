@@ -30,7 +30,7 @@ import java.util.UUID;
 )
 @EnvironmentVariables(value = {
 		@EnvironmentVariable(key = "region", value = "${region}"),
-		@EnvironmentVariable(key = "audit_table", value = "Audit")
+		@EnvironmentVariable(key = "table", value = "${target_table")
 })
 @DynamoDbTriggerEventSource(
 		targetTable = "Configuration",
@@ -38,7 +38,7 @@ import java.util.UUID;
 )
 public class AuditProducer implements RequestHandler<Map<String, Object>, Map<String, Object>> {
 
-	private static final String AUDIT_TABLE = System.getenv("audit_table");
+	private static final String AUDIT_TABLE = System.getenv("table");
 	private final DynamoDbClient dynamoDbClient;
 
 	public AuditProducer() {
@@ -73,8 +73,8 @@ public class AuditProducer implements RequestHandler<Map<String, Object>, Map<St
 				if (keys == null || !keys.containsKey("key")) continue;
 				String configKey = extractStringValue(keys.get("key"));
 
-				String beforeImage = (oldImage != null) ? oldImage.toString() : "N/A";
-				String afterImage = (newImage != null) ? newImage.toString() : "N/A";
+				String beforeImage = (oldImage != null) ? extractImage(oldImage) : "N/A";
+				String afterImage = (newImage != null) ? extractImage(newImage) : "N/A";
 				String timestamp = Instant.now().toString();
 
 				Map<String, AttributeValue> auditEntry = new HashMap<>();
@@ -108,5 +108,13 @@ public class AuditProducer implements RequestHandler<Map<String, Object>, Map<St
 			return ((Map<String, String>) value).get("S");
 		}
 		return "N/A";
+	}
+
+	private String extractImage(Map<String, Object> image) {
+		StringBuilder sb = new StringBuilder();
+		for (Map.Entry<String, Object> entry : image.entrySet()) {
+			sb.append(entry.getKey()).append(": ").append(extractStringValue(entry.getValue())).append(", ");
+		}
+		return sb.length() > 0 ? sb.substring(0, sb.length() - 2) : "N/A";
 	}
 }
