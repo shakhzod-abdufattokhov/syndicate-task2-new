@@ -10,14 +10,10 @@ import com.syndicate.deployment.model.RetentionSetting;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
-import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
-import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
+import software.amazon.awssdk.services.dynamodb.model.*;
 
 import java.time.Instant;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 
 @LambdaHandler(
 		lambdaName = "audit_producer",
@@ -53,17 +49,17 @@ public class AuditProducer implements RequestHandler<Map<String, Object>, Map<St
 
 			List<Map<String, Object>> records = (List<Map<String, Object>>) input.get("Records");
 			if (records == null || records.isEmpty()) {
-				context.getLogger().log("[WARN] No records found in the event.");
+				context.getLogger().log("[WARNING] No records found in the event.");
 				return Map.of("statusCode", 400, "message", "No records found");
 			}
 
 			for (Map<String, Object> record : records) {
-				String eventType = (String) record.get("eventName");
-				context.getLogger().log("[DEBUG] Processing event type: " + eventType);
+				context.getLogger().log("[INFO] Processing record: " + record);
 
+				String eventType = (String) record.get("eventName");
 				Map<String, Object> dynamodb = (Map<String, Object>) record.get("dynamodb");
 				if (dynamodb == null) {
-					context.getLogger().log("[WARN] Missing 'dynamodb' field in record. Skipping.");
+					context.getLogger().log("[WARNING] Skipping record, missing 'dynamodb' field.");
 					continue;
 				}
 
@@ -71,51 +67,42 @@ public class AuditProducer implements RequestHandler<Map<String, Object>, Map<St
 				Map<String, Object> newImage = (Map<String, Object>) dynamodb.get("NewImage");
 
 				if (keys == null || !keys.containsKey("key")) {
-					context.getLogger().log("[WARN] Skipping record, missing key field.");
+					context.getLogger().log("[ERROR] Skipping record, missing 'key' field.");
 					continue;
 				}
 
 				String itemKey = extractStringValue(keys.get("key"));
 				String modificationTime = Instant.now().toString();
 
-				// Extract the correct newValue
-				Map<String, AttributeValue> newValue = newImage != null ? extractImage(newImage) : new HashMap<>();
+				// Extract newValue correctly
+				Map<String, Object> formattedNewValue = new HashMap<>();
+				if (newImage != null) {
+					formattedNewValue.put("key", itemKey);
+					formattedNewValue.put("value", extractSingleValue(newImage.get("value")));
+				} else {
+					context.getLogger().log("[WARNING] No 'NewImage' found, setting newValue to null.");
+				}
 
-				// Log extracted values
-				context.getLogger().log("[DEBUG] Extracted newValue: " + newValue);
-
-				// Construct the correct audit entry
+				// Construct audit entry
 				Map<String, AttributeValue> auditEntry = new HashMap<>();
 				auditEntry.put("id", AttributeValue.builder().s(UUID.randomUUID().toString()).build());
 				auditEntry.put("audit_id", AttributeValue.builder().s(UUID.randomUUID().toString()).build());
 				auditEntry.put("itemKey", AttributeValue.builder().s(itemKey).build());
 				auditEntry.put("modificationTime", AttributeValue.builder().s(modificationTime).build());
 
-				// Store newValue correctly
-				if (newValue.containsKey("key") && newValue.containsKey("value")) {
-					String extractedKey = extractStringValue(newImage.get("key"));
-					String extractedValue = extractNumberOrStringValue(newImage.get("value"));
-
-					auditEntry.put("newValue_key", AttributeValue.builder().s(extractedKey).build());
-					auditEntry.put("newValue_value", AttributeValue.builder().s(extractedValue).build());
-
-					context.getLogger().log("[DEBUG] Corrected newValue stored: key=" + extractedKey + ", value=" + extractedValue);
-				} else {
-					context.getLogger().log("[WARN] newValue is missing 'key' or 'value', skipping.");
+				// Correctly format newValue as JSON
+				if (!formattedNewValue.isEmpty()) {
+					auditEntry.put("newValue", AttributeValue.builder().s(convertToJson(formattedNewValue)).build());
 				}
-
-				// Log before saving
-				context.getLogger().log("[INFO] Saving to audit table: " + auditEntry);
 
 				// Save to DynamoDB
 				PutItemRequest putItemRequest = PutItemRequest.builder()
 						.tableName(AUDIT_TABLE)
 						.item(auditEntry)
 						.build();
-				dynamoDbClient.putItem(putItemRequest);
 
-				// Log after saving
-				context.getLogger().log("[SUCCESS] Audit record saved for key: " + itemKey);
+				dynamoDbClient.putItem(putItemRequest);
+				context.getLogger().log("[SUCCESS] Saved audit record for key: " + itemKey);
 			}
 
 			return Map.of("statusCode", 200, "message", "Audit logs processed successfully");
@@ -127,35 +114,40 @@ public class AuditProducer implements RequestHandler<Map<String, Object>, Map<St
 
 	private String extractStringValue(Object value) {
 		if (value instanceof Map) {
-			return ((Map<String, String>) value).get("S");
+			Map<String, Object> valueMap = (Map<String, Object>) value;
+			return valueMap.getOrDefault("S", "N/A").toString();
 		}
 		return "N/A";
 	}
 
-	private String extractNumberOrStringValue(Object value) {
+	private Object extractSingleValue(Object value) {
 		if (value instanceof Map) {
 			Map<String, Object> valueMap = (Map<String, Object>) value;
 			if (valueMap.containsKey("S")) {
-				return (String) valueMap.get("S");
+				return valueMap.get("S").toString();
 			} else if (valueMap.containsKey("N")) {
-				return (String) valueMap.get("N");
+				return Integer.parseInt(valueMap.get("N").toString());
 			}
 		}
-		return "N/A";
+		return null;
 	}
 
-	private Map<String, AttributeValue> extractImage(Map<String, Object> image) {
-		Map<String, AttributeValue> attributeValueMap = new HashMap<>();
-		for (Map.Entry<String, Object> entry : image.entrySet()) {
-			Map<String, Object> valueMap = (Map<String, Object>) entry.getValue();
-			if (valueMap.containsKey("S")) {
-				attributeValueMap.put(entry.getKey(), AttributeValue.builder().s((String) valueMap.get("S")).build());
-			} else if (valueMap.containsKey("N")) {
-				attributeValueMap.put(entry.getKey(), AttributeValue.builder().n((String) valueMap.get("N")).build());
-			} else {
-				throw new IllegalArgumentException("Unsupported AttributeValue type: " + valueMap);
+	private String convertToJson(Map<String, Object> map) {
+		StringBuilder jsonBuilder = new StringBuilder("{");
+		boolean first = true;
+		for (Map.Entry<String, Object> entry : map.entrySet()) {
+			if (!first) {
+				jsonBuilder.append(", ");
 			}
+			jsonBuilder.append("\"").append(entry.getKey()).append("\": ");
+			if (entry.getValue() instanceof String) {
+				jsonBuilder.append("\"").append(entry.getValue()).append("\"");
+			} else {
+				jsonBuilder.append(entry.getValue());
+			}
+			first = false;
 		}
-		return attributeValueMap;
+		jsonBuilder.append("}");
+		return jsonBuilder.toString();
 	}
 }
