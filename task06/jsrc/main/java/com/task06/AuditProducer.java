@@ -10,10 +10,14 @@ import com.syndicate.deployment.model.RetentionSetting;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
-import software.amazon.awssdk.services.dynamodb.model.*;
+import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
 
 import java.time.Instant;
-import java.util.*;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 @LambdaHandler(
 		lambdaName = "audit_producer",
@@ -49,17 +53,17 @@ public class AuditProducer implements RequestHandler<Map<String, Object>, Map<St
 
 			List<Map<String, Object>> records = (List<Map<String, Object>>) input.get("Records");
 			if (records == null || records.isEmpty()) {
-				context.getLogger().log("[WARNING] No records found in the event.");
+				context.getLogger().log("[WARN] No records found in the event.");
 				return Map.of("statusCode", 400, "message", "No records found");
 			}
 
 			for (Map<String, Object> record : records) {
-				context.getLogger().log("[INFO] Processing record: " + record);
-
 				String eventType = (String) record.get("eventName");
+				context.getLogger().log("[DEBUG] Processing event type: " + eventType);
+
 				Map<String, Object> dynamodb = (Map<String, Object>) record.get("dynamodb");
 				if (dynamodb == null) {
-					context.getLogger().log("[WARNING] Skipping record, missing 'dynamodb' field.");
+					context.getLogger().log("[WARN] Missing 'dynamodb' field in record. Skipping.");
 					continue;
 				}
 
@@ -67,49 +71,51 @@ public class AuditProducer implements RequestHandler<Map<String, Object>, Map<St
 				Map<String, Object> newImage = (Map<String, Object>) dynamodb.get("NewImage");
 
 				if (keys == null || !keys.containsKey("key")) {
-					context.getLogger().log("[ERROR] Skipping record, missing 'key' field.");
+					context.getLogger().log("[WARN] Skipping record, missing key field.");
 					continue;
 				}
 
 				String itemKey = extractStringValue(keys.get("key"));
 				String modificationTime = Instant.now().toString();
 
-				Map<String, AttributeValue> newValue = new HashMap<>();
-				if (newImage != null) {
-					newValue = extractImage(newImage);
-				} else {
-					context.getLogger().log("[WARNING] No 'NewImage' found, setting newValue to null.");
-				}
+				// Extract the correct newValue
+				Map<String, AttributeValue> newValue = newImage != null ? extractImage(newImage) : new HashMap<>();
 
-				// Construct audit entry
+				// Log extracted values
+				context.getLogger().log("[DEBUG] Extracted newValue: " + newValue);
+
+				// Construct the correct audit entry
 				Map<String, AttributeValue> auditEntry = new HashMap<>();
 				auditEntry.put("id", AttributeValue.builder().s(UUID.randomUUID().toString()).build());
 				auditEntry.put("audit_id", AttributeValue.builder().s(UUID.randomUUID().toString()).build());
 				auditEntry.put("itemKey", AttributeValue.builder().s(itemKey).build());
 				auditEntry.put("modificationTime", AttributeValue.builder().s(modificationTime).build());
 
-				// Correctly format newValue as JSON
-				if (!newValue.isEmpty()) {
-					String formattedNewValue = "{ \"key\": \"" + itemKey + "\", \"value\": " + newValue + " }";
-					auditEntry.put("newValue", AttributeValue.builder().s(formattedNewValue).build());
+				// Store newValue correctly
+				if (newValue.containsKey("key") && newValue.containsKey("value")) {
+					String extractedKey = extractStringValue(newImage.get("key"));
+					String extractedValue = extractNumberOrStringValue(newImage.get("value"));
+
+					auditEntry.put("newValue_key", AttributeValue.builder().s(extractedKey).build());
+					auditEntry.put("newValue_value", AttributeValue.builder().s(extractedValue).build());
+
+					context.getLogger().log("[DEBUG] Corrected newValue stored: key=" + extractedKey + ", value=" + extractedValue);
+				} else {
+					context.getLogger().log("[WARN] newValue is missing 'key' or 'value', skipping.");
 				}
 
-				// Log table state before insertion
-				context.getLogger().log("[INFO] Checking existing entries in '" + AUDIT_TABLE + "' before inserting.");
-				scanTable(context);
+				// Log before saving
+				context.getLogger().log("[INFO] Saving to audit table: " + auditEntry);
 
 				// Save to DynamoDB
 				PutItemRequest putItemRequest = PutItemRequest.builder()
 						.tableName(AUDIT_TABLE)
 						.item(auditEntry)
 						.build();
-
 				dynamoDbClient.putItem(putItemRequest);
-				context.getLogger().log("[SUCCESS] Saved audit record for key: " + itemKey);
 
-				// Log table state after insertion
-				context.getLogger().log("[INFO] Checking existing entries in '" + AUDIT_TABLE + "' after inserting.");
-				scanTable(context);
+				// Log after saving
+				context.getLogger().log("[SUCCESS] Audit record saved for key: " + itemKey);
 			}
 
 			return Map.of("statusCode", 200, "message", "Audit logs processed successfully");
@@ -122,6 +128,18 @@ public class AuditProducer implements RequestHandler<Map<String, Object>, Map<St
 	private String extractStringValue(Object value) {
 		if (value instanceof Map) {
 			return ((Map<String, String>) value).get("S");
+		}
+		return "N/A";
+	}
+
+	private String extractNumberOrStringValue(Object value) {
+		if (value instanceof Map) {
+			Map<String, Object> valueMap = (Map<String, Object>) value;
+			if (valueMap.containsKey("S")) {
+				return (String) valueMap.get("S");
+			} else if (valueMap.containsKey("N")) {
+				return (String) valueMap.get("N");
+			}
 		}
 		return "N/A";
 	}
@@ -139,19 +157,5 @@ public class AuditProducer implements RequestHandler<Map<String, Object>, Map<St
 			}
 		}
 		return attributeValueMap;
-	}
-
-	private void scanTable(Context context) {
-		try {
-			ScanRequest scanRequest = ScanRequest.builder()
-					.tableName(AUDIT_TABLE)
-					.limit(5)
-					.build();
-
-			ScanResponse scanResponse = dynamoDbClient.scan(scanRequest);
-			context.getLogger().log("[DEBUG] Table contents: " + scanResponse.items());
-		} catch (Exception e) {
-			context.getLogger().log("[ERROR] Failed to scan table: " + e.getMessage());
-		}
 	}
 }
