@@ -79,6 +79,7 @@ public class AuditProducer implements RequestHandler<Map<String, Object>, Map<St
 
 				Map<String, AttributeValue> auditEntry = new HashMap<>();
 				auditEntry.put("audit_id", AttributeValue.builder().s(eventId).build());
+				auditEntry.put("id", AttributeValue.builder().s(UUID.randomUUID().toString()).build()); // Ensure id is set
 				auditEntry.put("config_key", AttributeValue.builder().s(configKey).build());
 				auditEntry.put("event_type", AttributeValue.builder().s(eventType).build());
 				auditEntry.put("before", AttributeValue.builder().s(beforeImage).build());
