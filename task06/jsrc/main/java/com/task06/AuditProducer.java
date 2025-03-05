@@ -30,7 +30,7 @@ import java.util.UUID;
 )
 @EnvironmentVariables(value = {
 		@EnvironmentVariable(key = "region", value = "${region}"),
-		@EnvironmentVariable(key = "table", value = "${target_table")
+		@EnvironmentVariable(key = "table", value = "${target_table}")
 })
 @DynamoDbTriggerEventSource(
 		targetTable = "Configuration",

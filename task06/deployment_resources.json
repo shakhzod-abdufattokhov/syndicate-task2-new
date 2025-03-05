@@ -12,6 +12,7 @@
             "dynamodb:PutItem",
             "dynamodb:Batch*",
             "dynamodb:DeleteItem",
+            "dynamodb:UpdateItem",
             "ssm:PutParameter",
             "ssm:GetParameter",
             "kms:Decrypt",
@@ -54,8 +55,6 @@
     "hash_key_type": "S",
     "read_capacity": 5,
     "write_capacity": 5,
-    "global_indexes": [],
-    "autoscaling": [],
     "tags": {}
   }
 }
