@@ -10,14 +10,10 @@ import com.syndicate.deployment.model.RetentionSetting;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
-import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
-import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
+import software.amazon.awssdk.services.dynamodb.model.*;
 
 import java.time.Instant;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 
 @LambdaHandler(
 		lambdaName = "audit_producer",
@@ -49,57 +45,76 @@ public class AuditProducer implements RequestHandler<Map<String, Object>, Map<St
 	@Override
 	public Map<String, Object> handleRequest(Map<String, Object> input, Context context) {
 		try {
-			context.getLogger().log("Received event: " + input);
+			context.getLogger().log("[INFO] Received event: " + input);
 
 			List<Map<String, Object>> records = (List<Map<String, Object>>) input.get("Records");
 			if (records == null || records.isEmpty()) {
+				context.getLogger().log("[WARNING] No records found in the event.");
 				return Map.of("statusCode", 400, "message", "No records found");
 			}
 
 			for (Map<String, Object> record : records) {
+				context.getLogger().log("[INFO] Processing record: " + record);
+
 				String eventType = (String) record.get("eventName");
 				Map<String, Object> dynamodb = (Map<String, Object>) record.get("dynamodb");
-				if (dynamodb == null) continue;
+				if (dynamodb == null) {
+					context.getLogger().log("[WARNING] Skipping record, missing 'dynamodb' field.");
+					continue;
+				}
 
 				Map<String, Object> keys = (Map<String, Object>) dynamodb.get("Keys");
 				Map<String, Object> newImage = (Map<String, Object>) dynamodb.get("NewImage");
 
 				if (keys == null || !keys.containsKey("key")) {
-					context.getLogger().log("Skipping record, missing key field.");
+					context.getLogger().log("[ERROR] Skipping record, missing 'key' field.");
 					continue;
 				}
 
 				String itemKey = extractStringValue(keys.get("key"));
 				String modificationTime = Instant.now().toString();
-				Map<String, AttributeValue> newValue = newImage != null ? extractImage(newImage) : new HashMap<>();
 
-				// Create an audit entry with the required "id" field
+				Map<String, AttributeValue> newValue = new HashMap<>();
+				if (newImage != null) {
+					newValue = extractImage(newImage);
+				} else {
+					context.getLogger().log("[WARNING] No 'NewImage' found, setting newValue to null.");
+				}
+
+				// Construct audit entry
 				Map<String, AttributeValue> auditEntry = new HashMap<>();
-				auditEntry.put("id", AttributeValue.builder().s(UUID.randomUUID().toString()).build()); // Ensuring partition key
+				auditEntry.put("id", AttributeValue.builder().s(UUID.randomUUID().toString()).build());
 				auditEntry.put("audit_id", AttributeValue.builder().s(UUID.randomUUID().toString()).build());
 				auditEntry.put("itemKey", AttributeValue.builder().s(itemKey).build());
 				auditEntry.put("modificationTime", AttributeValue.builder().s(modificationTime).build());
 
-				// Flatten the "newValue" attributes into the audit entry
+				// Correctly format newValue as JSON
 				if (!newValue.isEmpty()) {
-					for (Map.Entry<String, AttributeValue> entry : newValue.entrySet()) {
-						auditEntry.put("newValue_" + entry.getKey(), entry.getValue());
-					}
+					String formattedNewValue = "{ \"key\": \"" + itemKey + "\", \"value\": " + newValue + " }";
+					auditEntry.put("newValue", AttributeValue.builder().s(formattedNewValue).build());
 				}
+
+				// Log table state before insertion
+				context.getLogger().log("[INFO] Checking existing entries in '" + AUDIT_TABLE + "' before inserting.");
+				scanTable(context);
 
 				// Save to DynamoDB
 				PutItemRequest putItemRequest = PutItemRequest.builder()
 						.tableName(AUDIT_TABLE)
 						.item(auditEntry)
 						.build();
-				dynamoDbClient.putItem(putItemRequest);
 
-				context.getLogger().log("Saved audit record for key: " + itemKey);
+				dynamoDbClient.putItem(putItemRequest);
+				context.getLogger().log("[SUCCESS] Saved audit record for key: " + itemKey);
+
+				// Log table state after insertion
+				context.getLogger().log("[INFO] Checking existing entries in '" + AUDIT_TABLE + "' after inserting.");
+				scanTable(context);
 			}
 
 			return Map.of("statusCode", 200, "message", "Audit logs processed successfully");
 		} catch (Exception e) {
-			context.getLogger().log("Error processing event: " + e.getMessage());
+			context.getLogger().log("[ERROR] Exception occurred: " + e.getMessage());
 			return Map.of("statusCode", 500, "message", "Internal Server Error");
 		}
 	}
@@ -124,5 +139,19 @@ public class AuditProducer implements RequestHandler<Map<String, Object>, Map<St
 			}
 		}
 		return attributeValueMap;
+	}
+
+	private void scanTable(Context context) {
+		try {
+			ScanRequest scanRequest = ScanRequest.builder()
+					.tableName(AUDIT_TABLE)
+					.limit(5)
+					.build();
+
+			ScanResponse scanResponse = dynamoDbClient.scan(scanRequest);
+			context.getLogger().log("[DEBUG] Table contents: " + scanResponse.items());
+		} catch (Exception e) {
+			context.getLogger().log("[ERROR] Failed to scan table: " + e.getMessage());
+		}
 	}
 }
