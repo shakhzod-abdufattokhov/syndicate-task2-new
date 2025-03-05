@@ -104,8 +104,16 @@ public class AuditProducer implements RequestHandler<Map<String, Object>, Map<St
 	private Map<String, AttributeValue> extractImage(Map<String, Object> image) {
 		Map<String, AttributeValue> attributeValueMap = new HashMap<>();
 		for (Map.Entry<String, Object> entry : image.entrySet()) {
-			attributeValueMap.put(entry.getKey(), AttributeValue.builder().s(extractStringValue(entry.getValue())).build());
+			Map<String, Object> valueMap = (Map<String, Object>) entry.getValue();
+			if (valueMap.containsKey("S")) {
+				attributeValueMap.put(entry.getKey(), AttributeValue.builder().s((String) valueMap.get("S")).build());
+			} else if (valueMap.containsKey("N")) {
+				attributeValueMap.put(entry.getKey(), AttributeValue.builder().n((String) valueMap.get("N")).build());
+			} else {
+				throw new IllegalArgumentException("Unsupported AttributeValue type: " + valueMap);
+			}
 		}
 		return attributeValueMap;
 	}
+
 }
