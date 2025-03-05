@@ -59,31 +59,23 @@ public class AuditProducer implements RequestHandler<Map<String, Object>, Map<St
 			for (Map<String, Object> record : records) {
 				String eventType = (String) record.get("eventName");
 				Map<String, Object> dynamodb = (Map<String, Object>) record.get("dynamodb");
-
 				if (dynamodb == null) continue;
 
 				Map<String, Object> keys = (Map<String, Object>) dynamodb.get("Keys");
 				Map<String, Object> newImage = (Map<String, Object>) dynamodb.get("NewImage");
-				Map<String, Object> oldImage = (Map<String, Object>) dynamodb.get("OldImage");
 
 				if (keys == null || !keys.containsKey("key")) continue;
-
 				String itemKey = extractStringValue(keys.get("key"));
 				String modificationTime = Instant.now().toString();
-				Map<String, Object> auditEntry = new HashMap<>();
+				Map<String, AttributeValue> newValue = newImage != null ? extractImage(newImage) : null;
 
-				auditEntry.put("id", AttributeValue.builder().s(UUID.randomUUID().toString()).build());
+				Map<String, AttributeValue> auditEntry = new HashMap<>();
+				auditEntry.put("audit_id", AttributeValue.builder().s(UUID.randomUUID().toString()).build());
 				auditEntry.put("itemKey", AttributeValue.builder().s(itemKey).build());
 				auditEntry.put("modificationTime", AttributeValue.builder().s(modificationTime).build());
 
-				if ("INSERT".equals(eventType) && newImage != null) {
-					// New configuration added
-					auditEntry.put("newValue", AttributeValue.builder().s(formatConfig(newImage)).build());
-				} else if ("MODIFY".equals(eventType) && oldImage != null && newImage != null) {
-					// Configuration updated
-					auditEntry.put("updatedAttribute", AttributeValue.builder().s("value").build());
-					auditEntry.put("oldValue", AttributeValue.builder().s(extractNumberValue(oldImage.get("value"))).build());
-					auditEntry.put("newValue", AttributeValue.builder().s(extractNumberValue(newImage.get("value"))).build());
+				if (newValue != null) {
+					auditEntry.put("newValue", AttributeValue.builder().m(newValue).build());  // Fix here
 				}
 
 				PutItemRequest putItemRequest = PutItemRequest.builder()
@@ -102,7 +94,6 @@ public class AuditProducer implements RequestHandler<Map<String, Object>, Map<St
 		}
 	}
 
-	// Extract string values properly
 	private String extractStringValue(Object value) {
 		if (value instanceof Map) {
 			return ((Map<String, String>) value).get("S");
@@ -110,19 +101,11 @@ public class AuditProducer implements RequestHandler<Map<String, Object>, Map<St
 		return "N/A";
 	}
 
-	// Extract number values properly
-	private String extractNumberValue(Object value) {
-		if (value instanceof Map) {
-			return ((Map<String, String>) value).get("N");
+	private Map<String, AttributeValue> extractImage(Map<String, Object> image) {
+		Map<String, AttributeValue> attributeValueMap = new HashMap<>();
+		for (Map.Entry<String, Object> entry : image.entrySet()) {
+			attributeValueMap.put(entry.getKey(), AttributeValue.builder().s(extractStringValue(entry.getValue())).build());
 		}
-		return "0";
-	}
-
-	// Format new configuration item as JSON string
-	private String formatConfig(Map<String, Object> image) {
-		return String.format("{\"key\": \"%s\", \"value\": %s}",
-				extractStringValue(image.get("key")),
-				extractNumberValue(image.get("value"))
-		);
+		return attributeValueMap;
 	}
 }
