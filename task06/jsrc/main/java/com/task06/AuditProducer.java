@@ -139,12 +139,13 @@ public class AuditProducer implements RequestHandler<Map<String, Object>, Map<St
 			if (!first) {
 				jsonBuilder.append(", ");
 			}
-			jsonBuilder.append("\"").append(entry.getKey()).append("\": ");
+
 			if (entry.getValue() instanceof String) {
 				jsonBuilder.append("\"").append(entry.getValue()).append("\"");
 			} else {
 				jsonBuilder.append(entry.getValue());
 			}
+			jsonBuilder.append("\"").append(entry.getKey()).append("\": ");
 			first = false;
 		}
 		jsonBuilder.append("}");
