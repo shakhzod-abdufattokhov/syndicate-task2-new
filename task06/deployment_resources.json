@@ -12,14 +12,9 @@
             "dynamodb:PutItem",
             "dynamodb:Batch*",
             "dynamodb:DeleteItem",
-            "dynamodb:UpdateItem",
             "ssm:PutParameter",
             "ssm:GetParameter",
-            "kms:Decrypt",
-            "dynamodb:GetRecords",
-            "dynamodb:GetShardIterator",
-            "dynamodb:DescribeStream",
-            "dynamodb:ListStreams"
+            "kms:Decrypt"
           ],
           "Effect": "Allow",
           "Resource": "*"
@@ -43,8 +38,8 @@
     "resource_type": "dynamodb_table",
     "hash_key_name": "key",
     "hash_key_type": "S",
-    "read_capacity": 5,
-    "write_capacity": 5,
+    "read_capacity": 1,
+    "write_capacity": 1,
     "stream_enabled": true,
     "stream_view_type": "NEW_AND_OLD_IMAGES",
     "tags": {}
@@ -53,8 +48,8 @@
     "resource_type": "dynamodb_table",
     "hash_key_name": "id",
     "hash_key_type": "S",
-    "read_capacity": 5,
-    "write_capacity": 5,
+    "read_capacity": 1,
+    "write_capacity": 1,
     "tags": {}
   }
 }
