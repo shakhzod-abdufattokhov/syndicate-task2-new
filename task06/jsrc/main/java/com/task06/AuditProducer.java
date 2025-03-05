@@ -77,8 +77,8 @@ public class AuditProducer implements RequestHandler<Map<String, Object>, Map<St
 				// Extract newValue correctly
 				Map<String, Object> formattedNewValue = new HashMap<>();
 				if (newImage != null) {
-					formattedNewValue.put("key", itemKey);
 					formattedNewValue.put("value", extractSingleValue(newImage.get("value")));
+					formattedNewValue.put("key", itemKey);
 				} else {
 					context.getLogger().log("[WARNING] No 'NewImage' found, setting newValue to null.");
 				}
@@ -139,13 +139,12 @@ public class AuditProducer implements RequestHandler<Map<String, Object>, Map<St
 			if (!first) {
 				jsonBuilder.append(", ");
 			}
-
+			jsonBuilder.append("\"").append (entry.getKey()).append("\": ");
 			if (entry.getValue() instanceof String) {
 				jsonBuilder.append("\"").append(entry.getValue()).append("\"");
 			} else {
 				jsonBuilder.append(entry.getValue());
 			}
-			jsonBuilder.append("\"").append(entry.getKey()).append("\": ");
 			first = false;
 		}
 		jsonBuilder.append("}");
