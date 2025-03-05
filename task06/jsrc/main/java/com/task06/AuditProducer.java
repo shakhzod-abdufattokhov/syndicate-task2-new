@@ -75,10 +75,10 @@ public class AuditProducer implements RequestHandler<Map<String, Object>, Map<St
 				String modificationTime = Instant.now().toString();
 
 				// Extract newValue correctly
-				Map<String, Object> formattedNewValue = new HashMap<>();
+				Map<String, Object> formattedNewValue = new LinkedHashMap<>();
 				if (newImage != null) {
-					formattedNewValue.put("value", extractSingleValue(newImage.get("value")));
 					formattedNewValue.put("key", itemKey);
+					formattedNewValue.put("value", extractSingleValue(newImage.get("value")));
 				} else {
 					context.getLogger().log("[WARNING] No 'NewImage' found, setting newValue to null.");
 				}
