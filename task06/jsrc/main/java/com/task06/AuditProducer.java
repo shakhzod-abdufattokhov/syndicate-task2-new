@@ -28,7 +28,7 @@ import java.util.UUID;
 )
 @EnvironmentVariables(value = {
 		@EnvironmentVariable(key = "region", value = "${region}"),
-		@EnvironmentVariable(key = "audit_table", value = "${audit_table}")
+		@EnvironmentVariable(key = "table", value = "${target_table}")
 })
 @DynamoDbTriggerEventSource(
 		targetTable = "Configuration",
@@ -36,7 +36,7 @@ import java.util.UUID;
 )
 public class AuditProducer implements RequestHandler<Map<String, Object>, Map<String, Object>> {
 
-	private static final String AUDIT_TABLE = System.getenv("audit_table");
+	private static final String AUDIT_TABLE = System.getenv("table");
 	private final DynamoDbClient dynamoDbClient;
 
 	public AuditProducer() {
