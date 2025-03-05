@@ -74,11 +74,11 @@ public class AuditProducer implements RequestHandler<Map<String, Object>, Map<St
 				String itemKey = extractStringValue(keys.get("key"));
 				String modificationTime = Instant.now().toString();
 
-				// Corrected: Ensuring the newValue is stored as an object
-				Map<String, AttributeValue> formattedNewValue = new HashMap<>();
+				// Extract newValue correctly
+				Map<Object, Object> formattedNewValue = new HashMap<>();
 				if (newImage != null) {
-					formattedNewValue.put("key", AttributeValue.builder().s(itemKey).build());
-					formattedNewValue.put("value", extractAttributeValue(newImage.get("value")));
+					formattedNewValue.put("key", itemKey);
+					formattedNewValue.put("value", extractSingleValue(newImage.get("value")));
 				} else {
 					context.getLogger().log("[WARNING] No 'NewImage' found, setting newValue to null.");
 				}
@@ -90,9 +90,9 @@ public class AuditProducer implements RequestHandler<Map<String, Object>, Map<St
 				auditEntry.put("itemKey", AttributeValue.builder().s(itemKey).build());
 				auditEntry.put("modificationTime", AttributeValue.builder().s(modificationTime).build());
 
-				// Ensure newValue is stored as an object, not a string
+				// Correctly format newValue as JSON
 				if (!formattedNewValue.isEmpty()) {
-					auditEntry.put("newValue", AttributeValue.builder().m(formattedNewValue).build());
+					auditEntry.put("newValue", AttributeValue.builder().s(convertToJson(formattedNewValue)).build());
 				}
 
 				// Save to DynamoDB
@@ -120,15 +120,34 @@ public class AuditProducer implements RequestHandler<Map<String, Object>, Map<St
 		return "N/A";
 	}
 
-	private AttributeValue extractAttributeValue(Object value) {
+	private Object extractSingleValue(Object value) {
 		if (value instanceof Map) {
 			Map<String, Object> valueMap = (Map<String, Object>) value;
 			if (valueMap.containsKey("S")) {
-				return AttributeValue.builder().s(valueMap.get("S").toString()).build();
+				return valueMap.get("S").toString();
 			} else if (valueMap.containsKey("N")) {
-				return AttributeValue.builder().n(valueMap.get("N").toString()).build();
+				return Integer.parseInt(valueMap.get("N").toString());
 			}
 		}
-		return AttributeValue.builder().nul(true).build();
+		return null;
+	}
+
+	private String convertToJson(Map<Object, Object> map) {
+		StringBuilder jsonBuilder = new StringBuilder("{");
+		boolean first = true;
+		for (Map.Entry<Object, Object> entry : map.entrySet()) {
+			if (!first) {
+				jsonBuilder.append(", ");
+			}
+			jsonBuilder.append("\"").append(entry.getKey()).append("\": ");
+			if (entry.getValue() instanceof String) {
+				jsonBuilder.append("\"").append(entry.getValue()).append("\"");
+			} else {
+				jsonBuilder.append(entry.getValue());
+			}
+			first = false;
+		}
+		jsonBuilder.append("}");
+		return jsonBuilder.toString();
 	}
 }
