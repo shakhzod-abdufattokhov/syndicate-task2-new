@@ -75,10 +75,10 @@ public class AuditProducer implements RequestHandler<Map<String, Object>, Map<St
 				String modificationTime = Instant.now().toString();
 
 				// Extract newValue correctly
-				Map<String, AttributeValue> newValueMap = new HashMap<>();
+				Map<String, Object> formattedNewValue = new HashMap<>();
 				if (newImage != null) {
-					newValueMap.put("key", AttributeValue.builder().s(itemKey).build());
-					newValueMap.put("value", AttributeValue.builder().n(String.valueOf(extractSingleValue(newImage.get("value")))).build());
+					formattedNewValue.put("key", itemKey);
+					formattedNewValue.put("value", extractSingleValue(newImage.get("value")));
 				} else {
 					context.getLogger().log("[WARNING] No 'NewImage' found, setting newValue to null.");
 				}
@@ -90,9 +90,9 @@ public class AuditProducer implements RequestHandler<Map<String, Object>, Map<St
 				auditEntry.put("itemKey", AttributeValue.builder().s(itemKey).build());
 				auditEntry.put("modificationTime", AttributeValue.builder().s(modificationTime).build());
 
-				// Store newValue as an OBJECT, not a STRING
-				if (!newValueMap.isEmpty()) {
-					auditEntry.put("newValue", AttributeValue.builder().m(newValueMap).build());
+				// Correctly format newValue as JSON
+				if (!formattedNewValue.isEmpty()) {
+					auditEntry.put("newValue", AttributeValue.builder().s(convertToJson(formattedNewValue)).build());
 				}
 
 				// Save to DynamoDB
@@ -130,5 +130,24 @@ public class AuditProducer implements RequestHandler<Map<String, Object>, Map<St
 			}
 		}
 		return null;
+	}
+
+	private String convertToJson(Map<String, Object> map) {
+		StringBuilder jsonBuilder = new StringBuilder("{");
+		boolean first = true;
+		for (Map.Entry<String, Object> entry : map.entrySet()) {
+			if (!first) {
+				jsonBuilder.append(", ");
+			}
+			jsonBuilder.append("\"").append(entry.getKey()).append("\": ");
+			if (entry.getValue() instanceof String) {
+				jsonBuilder.append("\"").append(entry.getValue()).append("\"");
+			} else {
+				jsonBuilder.append(entry.getValue());
+			}
+			first = false;
+		}
+		jsonBuilder.append("}");
+		return jsonBuilder.toString();
 	}
 }
