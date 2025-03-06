@@ -4,6 +4,12 @@ import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.syndicate.deployment.annotations.environment.EnvironmentVariable;
+import com.syndicate.deployment.annotations.environment.EnvironmentVariables;
+import com.syndicate.deployment.annotations.lambda.LambdaHandler;
+import com.syndicate.deployment.annotations.resources.DependsOn;
+import com.syndicate.deployment.model.ResourceType;
+import com.syndicate.deployment.model.RetentionSetting;
 import software.amazon.awssdk.services.cognitoidentityprovider.CognitoIdentityProviderClient;
 import software.amazon.awssdk.services.cognitoidentityprovider.model.*;
 
@@ -11,6 +17,22 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.regex.Pattern;
 
+import static com.syndicate.deployment.model.environment.ValueTransformer.USER_POOL_NAME_TO_CLIENT_ID;
+import static com.syndicate.deployment.model.environment.ValueTransformer.USER_POOL_NAME_TO_USER_POOL_ID;
+
+@LambdaHandler(
+		lambdaName = "api_handler",
+		roleName = "api_handler-role",
+		isPublishVersion = true,
+		aliasName = "${lambdas_alias_name}",
+		logsExpiration = RetentionSetting.SYNDICATE_ALIASES_SPECIFIED
+)
+@DependsOn(resourceType = ResourceType.COGNITO_USER_POOL, name = "${booking_userpool}")
+@EnvironmentVariables(value = {
+		@EnvironmentVariable(key = "REGION", value = "${region}"),
+		@EnvironmentVariable(key = "COGNITO_ID", value = "${pool_name}", valueTransformer = USER_POOL_NAME_TO_USER_POOL_ID),
+		@EnvironmentVariable(key = "CLIENT_ID", value = "${pool_name}", valueTransformer = USER_POOL_NAME_TO_CLIENT_ID)
+})
 public class ApiHandler implements RequestHandler<Map<String, Object>, Map<String, Object>> {
 
 	private final CognitoIdentityProviderClient cognitoClient = CognitoIdentityProviderClient.create();
@@ -21,33 +43,27 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
 
 	@Override
 	public Map<String, Object> handleRequest(Map<String, Object> event, Context context) {
-		context.getLogger().log("Received event: " + event);
-
 		try {
 			String path = (String) event.get("resource");
 			String httpMethod = (String) event.get("httpMethod");
 			JsonNode body = objectMapper.readTree((String) event.get("body"));
 
 			if ("/signup".equals(path) && "POST".equalsIgnoreCase(httpMethod)) {
-				return handleSignUp(body, context);
+				return handleSignUp(body);
 			} else if ("/signin".equals(path) && "POST".equalsIgnoreCase(httpMethod)) {
-				return handleSignIn(body, context);
+				return handleSignIn(body);
 			}
 
 			return response(400, "Invalid request");
 		} catch (Exception e) {
-			context.getLogger().log("Error processing request: " + e.getMessage());
 			return response(400, "Error processing request: " + e.getMessage());
 		}
 	}
 
-	private Map<String, Object> handleSignUp(JsonNode body, Context context) {
+	private Map<String, Object> handleSignUp(JsonNode body) {
 		try {
 			String email = body.get("email").asText();
 			String password = body.get("password").asText();
-			String firstName = body.get("firstName").asText();
-			String lastName = body.get("lastName").asText();
-			String nickName = body.get("nickName").asText();
 
 			if (!EMAIL_PATTERN.matcher(email).matches()) {
 				return response(400, "Invalid email format.");
@@ -56,22 +72,29 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
 				return response(400, "Password must be at least 12 characters long, contain letters, digits, and special characters.");
 			}
 
+			// Ensure the user is created and confirmed
 			AdminCreateUserRequest createUserRequest = AdminCreateUserRequest.builder()
 					.userPoolId(System.getenv("COGNITO_ID"))
-					.username(nickName)
-					.temporaryPassword(password)
+					.username(email)
+					.temporaryPassword(password) // Cognito requires a temporary password before setting a permanent one
 					.userAttributes(
-							AttributeType.builder().name("given_name").value(firstName).build(),
-							AttributeType.builder().name("family_name").value(lastName).build(),
 							AttributeType.builder().name("email").value(email).build(),
 							AttributeType.builder().name("email_verified").value("true").build()
 					)
-					.desiredDeliveryMediums(DeliveryMediumType.EMAIL)
-					.messageAction("SUPPRESS")
-					.forceAliasCreation(false)
+					.messageAction(MessageActionType.SUPPRESS) // Avoids sending an email verification
 					.build();
 
 			cognitoClient.adminCreateUser(createUserRequest);
+
+			// Set the password permanently
+			AdminSetUserPasswordRequest setUserPasswordRequest = AdminSetUserPasswordRequest.builder()
+					.userPoolId(System.getenv("COGNITO_ID"))
+					.username(email)
+					.password(password)
+					.permanent(true) // Ensures user does not need to reset the password
+					.build();
+
+			cognitoClient.adminSetUserPassword(setUserPasswordRequest);
 
 			return response(200, "User registered successfully.");
 		} catch (CognitoIdentityProviderException e) {
@@ -79,7 +102,7 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
 		}
 	}
 
-	private Map<String, Object> handleSignIn(JsonNode body, Context context) {
+	private Map<String, Object> handleSignIn(JsonNode body) {
 		try {
 			String email = body.get("email").asText();
 			String password = body.get("password").asText();
