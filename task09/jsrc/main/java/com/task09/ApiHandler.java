@@ -19,13 +19,13 @@ import java.util.Map;
 @LambdaHandler(
 		lambdaName = "api_handler",
 		roleName = "api_handler-role",
-		layers = {"sdk-layer"},
+		layers = {"sdk_layer"},
 		isPublishVersion = true,
 		aliasName = "${lambdas_alias_name}",
 		logsExpiration = RetentionSetting.SYNDICATE_ALIASES_SPECIFIED
 )
 @LambdaLayer(
-		layerName = "sdk-layer",
+		layerName = "sdk_layer",
 		libraries = {
 				"lib/jackson-databind-2.18.2.jar",
 				"lib/httpclient5-5.4.1.jar",
