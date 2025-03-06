@@ -39,122 +39,96 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
 	private static final Pattern EMAIL_PATTERN = Pattern.compile("^[A-Za-z0-9+_.-]+@(.+)$");
-	private static final int MIN_PASSWORD_LENGTH = 12; // Enforced password policy
+	private static final Pattern PASSWORD_PATTERN = Pattern.compile("^(?=.*[A-Za-z])(?=.*\\d)(?=.*[$%^*-_])[A-Za-z\\d$%^*-_]{12,}$");
 
 	@Override
 	public Map<String, Object> handleRequest(Map<String, Object> event, Context context) {
-		String path = (String) event.get("path");
-		String method = (String) event.get("httpMethod");
-
 		try {
-			switch (path) {
-				case "/signup":
-					return method.equals("POST") ? handleSignup(event) : createResponse(400, "Invalid request");
-				case "/signin":
-					return method.equals("POST") ? handleSignin(event) : createResponse(400, "Invalid request");
-				default:
-					return createResponse(400, "Invalid request");
+			String path = (String) event.get("resource");
+			String httpMethod = (String) event.get("httpMethod");
+			JsonNode body = objectMapper.readTree((String) event.get("body"));
+
+			if ("/signup".equals(path) && "POST".equalsIgnoreCase(httpMethod)) {
+				return handleSignUp(body);
+			} else if ("/signin".equals(path) && "POST".equalsIgnoreCase(httpMethod)) {
+				return handleSignIn(body);
 			}
+
+			return response(400, "Invalid request");
 		} catch (Exception e) {
-			return createResponse(500, "Error: " + e.getMessage());
+			return response(400, "Error processing request: " + e.getMessage());
 		}
 	}
 
-	private Map<String, Object> handleSignup(Map<String, Object> event) {
-		JsonNode body = parseBody(event);
-		String email = body.get("email").asText();
-		String password = body.get("password").asText();
-
-		if (!isValidEmail(email)) {
-			return createResponse(400, "Invalid email format");
-		}
-
-		if (!isValidPassword(password)) {
-			return createResponse(400, "Password must be at least " + MIN_PASSWORD_LENGTH + " characters long and include special characters.");
-		}
-
+	private Map<String, Object> handleSignUp(JsonNode body) {
 		try {
-			// Check if user already exists
-			cognitoClient.adminGetUser(AdminGetUserRequest.builder()
-					.userPoolId(System.getenv("COGNITO_ID"))
-					.username(email)
-					.build());
+			String firstName = body.get("firstName").asText();
+			String lastName = body.get("lastName").asText();
+			String email = body.get("email").asText();
+			String password = body.get("password").asText();
 
-			return createResponse(400, "User already exists");
-		} catch (UserNotFoundException ignored) {
-			// Expected if user does not exist
-		}
+			if (!EMAIL_PATTERN.matcher(email).matches()) {
+				return response(400, "Invalid email format");
+			}
+			if (!PASSWORD_PATTERN.matcher(password).matches()) {
+				return response(400, "Password must be 12+ chars, alphanumeric + any of $%^*-_");
+			}
 
-		try {
-			// Create the user
-			AdminCreateUserRequest createUserRequest = AdminCreateUserRequest.builder()
-					.userPoolId(System.getenv("COGNITO_ID"))
-					.username(email)
-					.temporaryPassword(password)
-					.messageAction(MessageActionType.SUPPRESS)
-					.userAttributes(
-							AttributeType.builder().name("email").value(email).build(),
-							AttributeType.builder().name("email_verified").value("true").build()
-					)
-					.build();
-
-			cognitoClient.adminCreateUser(createUserRequest);
-
-			// Set a permanent password
-			cognitoClient.adminSetUserPassword(AdminSetUserPasswordRequest.builder()
-					.userPoolId(System.getenv("COGNITO_ID"))
+			cognitoClient.signUp(SignUpRequest.builder()
+					.clientId(System.getenv("CLIENT_ID"))
 					.username(email)
 					.password(password)
-					.permanent(true)
-					.build());
+					.userAttributes(
+							AttributeType.builder().name("given_name").value(firstName).build(),
+							AttributeType.builder().name("family_name").value(lastName).build(),
+							AttributeType.builder().name("email").value(email).build()
+					)
+					.build()
+			);
 
-			return createResponse(200, "User registered successfully");
+			return response(200, "Sign-up process is successful");
+
 		} catch (CognitoIdentityProviderException e) {
-			return createResponse(400, "Signup failed: " + e.awsErrorDetails().errorMessage());
+			return response(400, "Cognito Error: " + e.awsErrorDetails().errorMessage());
 		}
 	}
 
-	private Map<String, Object> handleSignin(Map<String, Object> event) {
-		JsonNode body = parseBody(event);
-		String email = body.get("email").asText();
-		String password = body.get("password").asText();
-
+	private Map<String, Object> handleSignIn(JsonNode body) {
 		try {
-			InitiateAuthRequest request = InitiateAuthRequest.builder()
+			String email = body.get("email").asText();
+			String password = body.get("password").asText();
+
+			if (!EMAIL_PATTERN.matcher(email).matches()) {
+				return response(400, "Invalid email format");
+			}
+			if (!PASSWORD_PATTERN.matcher(password).matches()) {
+				return response(400, "Invalid password format");
+			}
+
+			InitiateAuthResponse authResponse = cognitoClient.initiateAuth(InitiateAuthRequest.builder()
 					.authFlow(AuthFlowType.USER_PASSWORD_AUTH)
 					.clientId(System.getenv("CLIENT_ID"))
 					.authParameters(Map.of("USERNAME", email, "PASSWORD", password))
-					.build();
+					.build()
+			);
 
-			InitiateAuthResponse response = cognitoClient.initiateAuth(request);
-			return createResponse(200, Map.of("accessToken", response.authenticationResult().idToken()));
+			String accessToken = authResponse.authenticationResult().idToken(); // Use ID token for API authentication
+
+			Map<String, Object> response = new HashMap<>();
+			response.put("accessToken", accessToken);
+			return response(200, response);
+
 		} catch (NotAuthorizedException | UserNotFoundException e) {
-			return createResponse(400, "Invalid credentials");
+			return response(400, "Invalid email or password");
 		} catch (CognitoIdentityProviderException e) {
-			return createResponse(500, "Signin failed: " + e.awsErrorDetails().errorMessage());
+			return response(400, "Cognito Error: " + e.awsErrorDetails().errorMessage());
 		}
 	}
 
-	private boolean isValidEmail(String email) {
-		return EMAIL_PATTERN.matcher(email).matches();
-	}
-
-	private boolean isValidPassword(String password) {
-		return password.length() >= MIN_PASSWORD_LENGTH && password.matches(".*[!@#$%^&*].*");
-	}
-
-	private JsonNode parseBody(Map<String, Object> event) {
-		try {
-			return objectMapper.readTree((String) event.get("body"));
-		} catch (Exception e) {
-			throw new RuntimeException("Invalid JSON body");
-		}
-	}
-
-	private Map<String, Object> createResponse(int statusCode, Object body) {
-		return Map.of(
-				"statusCode", statusCode,
-				"body", objectMapper.valueToTree(body).toString()
-		);
+	private Map<String, Object> response(int statusCode, Object body) {
+		Map<String, Object> response = new HashMap<>();
+		response.put("statusCode", statusCode);
+		response.put("body", body instanceof String ? body : objectMapper.valueToTree(body));
+		return response;
 	}
 }
