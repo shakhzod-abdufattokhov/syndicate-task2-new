@@ -136,7 +136,7 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
 	}
 
 	private Map<String, Object> successResponse(Object data) {
-		return Map.of("statusCode", 200, "body", data);
+		return Map.of("statusCode", 400, "body", data);
 	}
 
 	private Map<String, Object> errorResponse(int statusCode, String message) {
