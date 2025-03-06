@@ -13,13 +13,10 @@ import com.syndicate.deployment.model.RetentionSetting;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.cognitoidentityprovider.CognitoIdentityProviderClient;
 import software.amazon.awssdk.services.cognitoidentityprovider.model.*;
-
-import java.util.HashMap;
-import java.util.Map;
-import java.util.regex.Pattern;
-
-import static com.syndicate.deployment.model.environment.ValueTransformer.USER_POOL_NAME_TO_CLIENT_ID;
-import static com.syndicate.deployment.model.environment.ValueTransformer.USER_POOL_NAME_TO_USER_POOL_ID;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
+import software.amazon.awssdk.services.dynamodb.model.*;
+import java.util.*;
+import static com.syndicate.deployment.model.environment.ValueTransformer.*;
 
 @LambdaHandler(
 		lambdaName = "api_handler",
@@ -36,115 +33,117 @@ import static com.syndicate.deployment.model.environment.ValueTransformer.USER_P
 })
 public class ApiHandler implements RequestHandler<Map<String, Object>, Map<String, Object>> {
 
-	private final CognitoIdentityProviderClient cognitoClient = CognitoIdentityProviderClient.builder()
-			.region(Region.of(System.getenv("REGION")))
-			.build();
+	private final CognitoIdentityProviderClient cognitoClient;
+	private final DynamoDbClient dynamoDbClient;
+	private final ObjectMapper objectMapper;
 
-	private final ObjectMapper objectMapper = new ObjectMapper();
-
-	private static final Pattern EMAIL_PATTERN = Pattern.compile("^[A-Za-z0-9+_.-]+@(.+)$");
-	private static final Pattern PASSWORD_PATTERN = Pattern.compile("^(?=.*[A-Za-z])(?=.*\\d)(?=.*[$%^*-_])[A-Za-z\\d$%^*-_]{12,}$");
+	public ApiHandler() {
+		this.cognitoClient = CognitoIdentityProviderClient.builder()
+				.region(Region.of(System.getenv("REGION")))
+				.build();
+		this.dynamoDbClient = DynamoDbClient.builder()
+				.region(Region.of(System.getenv("REGION")))
+				.build();
+		this.objectMapper = new ObjectMapper();
+	}
 
 	@Override
 	public Map<String, Object> handleRequest(Map<String, Object> event, Context context) {
+		String path = (String) event.get("path");
+		String httpMethod = (String) event.get("httpMethod");
+
 		try {
-			String path = (String) event.get("resource");
-			String httpMethod = (String) event.get("httpMethod");
-			JsonNode body = objectMapper.readTree((String) event.get("body"));
-
-			context.getLogger().log("Received request: Path=" + path + ", Method=" + httpMethod + ", Body=" + body.toString());
-
-			if ("/signup".equals(path) && "POST".equalsIgnoreCase(httpMethod)) {
-				return handleSignUp(body, context);
-			} else if ("/signin".equals(path) && "POST".equalsIgnoreCase(httpMethod)) {
-				return handleSignIn(body, context);
+			switch (path) {
+				case "/signup":
+					return "POST".equalsIgnoreCase(httpMethod) ? handleSignUp(event) : invalidMethodResponse();
+				case "/signin":
+					return "POST".equalsIgnoreCase(httpMethod) ? handleSignIn(event) : invalidMethodResponse();
+				case "/tables":
+					return "POST".equalsIgnoreCase(httpMethod) ? handleCreateTable(event) : handleGetTables();
+				case "/reservations":
+					return "POST".equalsIgnoreCase(httpMethod) ? handleCreateReservation(event) : handleGetReservations();
+				default:
+					return errorResponse(404, "Invalid path");
 			}
-
-			return response(400, "Invalid request");
 		} catch (Exception e) {
-			context.getLogger().log("Error processing request: " + e.getMessage());
-			return response(400, "Error processing request: " + e.getMessage());
+			return errorResponse(500, "Error: " + e.getMessage());
 		}
 	}
 
-	private Map<String, Object> handleSignUp(JsonNode body, Context context) {
-		try {
-			String email = body.get("email").asText();
-			String password = body.get("password").asText();
+	private Map<String, Object> handleSignUp(Map<String, Object> event) throws Exception {
+		JsonNode body = objectMapper.readTree((String) event.get("body"));
+		String username = body.get("username").asText();
+		String password = body.get("password").asText();
 
-			context.getLogger().log("Signup request received for email: " + email);
-
-			if (!EMAIL_PATTERN.matcher(email).matches()) {
-				return response(400, "Invalid email format.");
-			}
-			if (!PASSWORD_PATTERN.matcher(password).matches()) {
-				return response(400, "Password must be at least 12 characters long, contain letters, digits, and special characters.");
-			}
-
-			String userPoolId = System.getenv("COGNITO_ID");
-
-			AdminCreateUserRequest createUserRequest = AdminCreateUserRequest.builder()
-					.userPoolId(userPoolId)
-					.username(email)
-					.userAttributes(
-							AttributeType.builder().name("email").value(email).build(),
-							AttributeType.builder().name("email_verified").value("true").build()
-					)
-					.messageAction(MessageActionType.SUPPRESS)
-					.build();
-
-			cognitoClient.adminCreateUser(createUserRequest);
-			context.getLogger().log("User created successfully.");
-
-			AdminSetUserPasswordRequest setUserPasswordRequest = AdminSetUserPasswordRequest.builder()
-					.userPoolId(userPoolId)
-					.username(email)
-					.password(password)
-					.permanent(true)
-					.build();
-
-			cognitoClient.adminSetUserPassword(setUserPasswordRequest);
-			context.getLogger().log("Password set successfully.");
-
-			return response(200, "User registered successfully.");
-		} catch (CognitoIdentityProviderException e) {
-			return response(400, "Cognito error: " + e.awsErrorDetails().errorMessage());
-		}
+		SignUpRequest signUpRequest = SignUpRequest.builder()
+				.clientId(System.getenv("CLIENT_ID"))
+				.username(username)
+				.password(password)
+				.build();
+		cognitoClient.signUp(signUpRequest);
+		return successResponse("User registered successfully");
 	}
 
-	private Map<String, Object> handleSignIn(JsonNode body, Context context) {
-		try {
-			String email = body.get("email").asText();
-			String password = body.get("password").asText();
+	private Map<String, Object> handleSignIn(Map<String, Object> event) throws Exception {
+		JsonNode body = objectMapper.readTree((String) event.get("body"));
+		String username = body.get("username").asText();
+		String password = body.get("password").asText();
 
-			context.getLogger().log("Signin request received for email: " + email);
-
-			Map<String, String> authParams = new HashMap<>();
-			authParams.put("USERNAME", email);
-			authParams.put("PASSWORD", password);
-
-			AdminInitiateAuthRequest authRequest = AdminInitiateAuthRequest.builder()
-					.authFlow(AuthFlowType.ADMIN_NO_SRP_AUTH)
-					.userPoolId(System.getenv("COGNITO_ID"))
-					.clientId(System.getenv("CLIENT_ID"))
-					.authParameters(authParams)
-					.build();
-
-			AdminInitiateAuthResponse authResponse = cognitoClient.adminInitiateAuth(authRequest);
-			return response(200, authResponse.authenticationResult().idToken());
-		} catch (UserNotFoundException e) {
-			return response(400, "User not found.");
-		} catch (NotAuthorizedException e) {
-			return response(400, "Invalid username or password.");
-		} catch (CognitoIdentityProviderException e) {
-			return response(400, "Authentication failed: " + e.awsErrorDetails().errorMessage());
-		}
+		InitiateAuthRequest authRequest = InitiateAuthRequest.builder()
+				.authFlow(AuthFlowType.USER_PASSWORD_AUTH)
+				.clientId(System.getenv("CLIENT_ID"))
+				.authParameters(Map.of("USERNAME", username, "PASSWORD", password))
+				.build();
+		InitiateAuthResponse authResponse = cognitoClient.initiateAuth(authRequest);
+		return successResponse(authResponse.authenticationResult().idToken());
 	}
 
-	private Map<String, Object> response(int statusCode, String message) {
-		Map<String, Object> response = new HashMap<>();
-		response.put("statusCode", statusCode);
-		response.put("body", message);
-		return response;
+	private Map<String, Object> handleCreateTable(Map<String, Object> event) {
+		CreateTableRequest request = CreateTableRequest.builder()
+				.tableName("Tables")
+				.keySchema(KeySchemaElement.builder().attributeName("id").keyType(KeyType.HASH).build())
+				.attributeDefinitions(AttributeDefinition.builder().attributeName("id").attributeType(ScalarAttributeType.S).build())
+				.billingMode(BillingMode.PAY_PER_REQUEST)
+				.build();
+		dynamoDbClient.createTable(request);
+		return successResponse("Table created successfully");
+	}
+
+	private Map<String, Object> handleGetTables() {
+		ListTablesResponse response = dynamoDbClient.listTables();
+		return successResponse(response.tableNames());
+	}
+
+	private Map<String, Object> handleCreateReservation(Map<String, Object> event) throws Exception {
+		JsonNode body = objectMapper.readTree((String) event.get("body"));
+		String reservationId = UUID.randomUUID().toString();
+
+		PutItemRequest request = PutItemRequest.builder()
+				.tableName("Reservations")
+				.item(Map.of(
+						"id", AttributeValue.builder().s(reservationId).build(),
+						"user", AttributeValue.builder().s(body.get("user").asText()).build(),
+						"table", AttributeValue.builder().s(body.get("table").asText()).build()
+				))
+				.build();
+		dynamoDbClient.putItem(request);
+		return successResponse("Reservation created successfully");
+	}
+
+	private Map<String, Object> handleGetReservations() {
+		ScanResponse response = dynamoDbClient.scan(ScanRequest.builder().tableName("Reservations").build());
+		return successResponse(response.items());
+	}
+
+	private Map<String, Object> successResponse(Object data) {
+		return Map.of("statusCode", 200, "body", data);
+	}
+
+	private Map<String, Object> errorResponse(int statusCode, String message) {
+		return Map.of("statusCode", statusCode, "body", message);
+	}
+
+	private Map<String, Object> invalidMethodResponse() {
+		return errorResponse(405, "Method Not Allowed");
 	}
 }
