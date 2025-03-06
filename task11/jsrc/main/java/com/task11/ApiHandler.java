@@ -10,6 +10,7 @@ import com.syndicate.deployment.annotations.lambda.LambdaHandler;
 import com.syndicate.deployment.annotations.resources.DependsOn;
 import com.syndicate.deployment.model.ResourceType;
 import com.syndicate.deployment.model.RetentionSetting;
+import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.cognitoidentityprovider.CognitoIdentityProviderClient;
 import software.amazon.awssdk.services.cognitoidentityprovider.model.*;
 
@@ -35,7 +36,10 @@ import static com.syndicate.deployment.model.environment.ValueTransformer.USER_P
 })
 public class ApiHandler implements RequestHandler<Map<String, Object>, Map<String, Object>> {
 
-	private final CognitoIdentityProviderClient cognitoClient = CognitoIdentityProviderClient.create();
+	private final CognitoIdentityProviderClient cognitoClient = CognitoIdentityProviderClient.builder()
+			.region(Region.of(System.getenv("REGION")))
+			.build();
+
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
 	private static final Pattern EMAIL_PATTERN = Pattern.compile("^[A-Za-z0-9+_.-]+@(.+)$");
@@ -72,26 +76,24 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
 				return response(400, "Password must be at least 12 characters long, contain letters, digits, and special characters.");
 			}
 
-			// Ensure the user is created and confirmed
 			AdminCreateUserRequest createUserRequest = AdminCreateUserRequest.builder()
 					.userPoolId(System.getenv("COGNITO_ID"))
 					.username(email)
-					.temporaryPassword(password) // Cognito requires a temporary password before setting a permanent one
+					.temporaryPassword(password)
 					.userAttributes(
 							AttributeType.builder().name("email").value(email).build(),
 							AttributeType.builder().name("email_verified").value("true").build()
 					)
-					.messageAction(MessageActionType.SUPPRESS) // Avoids sending an email verification
+					.messageAction(MessageActionType.SUPPRESS)
 					.build();
 
 			cognitoClient.adminCreateUser(createUserRequest);
 
-			// Set the password permanently
 			AdminSetUserPasswordRequest setUserPasswordRequest = AdminSetUserPasswordRequest.builder()
 					.userPoolId(System.getenv("COGNITO_ID"))
 					.username(email)
 					.password(password)
-					.permanent(true) // Ensures user does not need to reset the password
+					.permanent(true)
 					.build();
 
 			cognitoClient.adminSetUserPassword(setUserPasswordRequest);
@@ -113,7 +115,6 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
 
 			AdminInitiateAuthRequest authRequest = AdminInitiateAuthRequest.builder()
 					.authFlow(AuthFlowType.ADMIN_NO_SRP_AUTH)
-					.clientId(System.getenv("CLIENT_ID"))
 					.userPoolId(System.getenv("COGNITO_ID"))
 					.authParameters(authParams)
 					.build();
