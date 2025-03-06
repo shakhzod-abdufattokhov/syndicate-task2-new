@@ -2,48 +2,72 @@ package com.task09;
 
 import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
-import com.google.gson.Gson;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.syndicate.deployment.annotations.lambda.LambdaHandler;
 import com.syndicate.deployment.annotations.lambda.LambdaLayer;
+import com.syndicate.deployment.annotations.lambda.LambdaUrlConfig;
 import com.syndicate.deployment.model.Architecture;
 import com.syndicate.deployment.model.ArtifactExtension;
 import com.syndicate.deployment.model.DeploymentRuntime;
 import com.syndicate.deployment.model.RetentionSetting;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.syndicate.deployment.model.lambda.url.AuthType;
+import com.syndicate.deployment.model.lambda.url.InvokeMode;
 
 import java.util.HashMap;
 import java.util.Map;
 
-@LambdaLayer(
-		layerName = "sdk_layer",
-		libraries = {"lib/commons-lang3-3.14.0.jar", "lib/gson-2.10.1.jar"},
-		runtime = DeploymentRuntime.JAVA11,
-		architectures = {Architecture.ARM64},
-		artifactExtension = ArtifactExtension.ZIP
-)
 @LambdaHandler(
 		lambdaName = "api_handler",
 		roleName = "api_handler-role",
-		layers = "sdk_layer",
+		layers = {"sdk-layer"},
 		isPublishVersion = true,
 		aliasName = "${lambdas_alias_name}",
 		logsExpiration = RetentionSetting.SYNDICATE_ALIASES_SPECIFIED
 )
+@LambdaLayer(
+		layerName = "sdk-layer",
+		libraries = {
+				"lib/jackson-databind-2.18.2.jar",
+				"lib/httpclient5-5.4.1.jar",
+				"lib/jackson-annotations-2.18.2.jar",
+				"lib/jackson-core-2.18.2.jar",
+		},
+		architectures = {Architecture.ARM64},
+		artifactExtension = ArtifactExtension.ZIP
+)
+@LambdaUrlConfig(
+		authType = AuthType.NONE,
+		invokeMode = InvokeMode.BUFFERED
+)
+public class ApiHandler implements RequestHandler<Map<String, Object>, Map<String, Object>> {
 
-public class ApiHandler implements RequestHandler<Object, Map<String, Object>> {
-
-	private final WeatherApiClient weatherApiClient = new WeatherApiClient();
-	private final Gson gson = new Gson();
+	private final WeatherClient weatherClient = new WeatherClient();
+	private final ObjectMapper objectMapper = new ObjectMapper();
 
 	@Override
-	public Map<String, Object> handleRequest(Object request, Context context) {
-		System.out.println("Fetching weather data...");
+	public Map<String, Object> handleRequest(Map<String, Object> event, Context context) {
+		Map<String, Object> requestContext = (Map<String, Object>) event.get("requestContext");
+		Map<String, String> httpInfo = (Map<String, String>) requestContext.get("http");
 
-		String weatherData = weatherApiClient.fetchWeatherData(52.52, 13.41); // Berlin coordinates
+		String path = httpInfo.get("path");
+		String method = httpInfo.get("method");
 
-		Map<String, Object> resultMap = new HashMap<>();
-		resultMap.put("statusCode", 200);
-		resultMap.put("body", weatherData);
+		if (!"/weather".equals(path) || !"GET".equalsIgnoreCase(method)) {
+			String errorMessage = String.format("Bad request syntax or unsupported method. Request path: %s. HTTP method: %s", path, method);
+			return createResponse(400, errorMessage);
+		}
 
-		return resultMap;
+		JsonNode weatherData = weatherClient.fetchWeatherData();
+		return Map.of("statusCode", 200, "body", weatherData.toString());
+	}
+
+	private Map<String, Object> createResponse(int statusCode, String message) {
+		Map<String, Object> response = new HashMap<>();
+		response.put("statusCode", statusCode);
+		response.put("body", String.format("{\"statusCode\": %d, \"message\": \"%s\"}", statusCode, message));
+		return response;
 	}
 }
