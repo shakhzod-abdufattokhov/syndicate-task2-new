@@ -43,35 +43,46 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
 
 	@Override
 	public Map<String, Object> handleRequest(Map<String, Object> event, Context context) {
+		context.getLogger().log("Received event: " + event);
+
 		try {
 			String path = (String) event.get("resource");
 			String httpMethod = (String) event.get("httpMethod");
 			JsonNode body = objectMapper.readTree((String) event.get("body"));
 
 			if ("/signup".equals(path) && "POST".equalsIgnoreCase(httpMethod)) {
-				return handleSignUp(body);
+				return handleSignUp(body, context);
 			} else if ("/signin".equals(path) && "POST".equalsIgnoreCase(httpMethod)) {
-				return handleSignIn(body);
+				return handleSignIn(body, context);
 			}
 
 			return response(400, "Invalid request");
 		} catch (Exception e) {
+			context.getLogger().log("Error processing request: " + e.getMessage());
 			return response(400, "Error processing request: " + e.getMessage());
 		}
 	}
 
-	private Map<String, Object> handleSignUp(JsonNode body) {
+	private Map<String, Object> handleSignUp(JsonNode body, Context context) {
 		try {
 			String email = body.get("email").asText();
 			String password = body.get("password").asText();
 
+			context.getLogger().log("Signup attempt with email: " + email);
+
+			// Validate email
 			if (!EMAIL_PATTERN.matcher(email).matches()) {
+				context.getLogger().log("Invalid email format: " + email);
 				return response(400, "Invalid email format.");
 			}
+
+			// Validate password
 			if (!PASSWORD_PATTERN.matcher(password).matches()) {
+				context.getLogger().log("Invalid password format for email: " + email);
 				return response(400, "Password must be at least 12 characters long, contain letters, digits, and special characters.");
 			}
 
+			// Create user in Cognito
 			SignUpRequest signUpRequest = SignUpRequest.builder()
 					.clientId(System.getenv("CLIENT_ID"))
 					.username(email)
@@ -84,16 +95,20 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
 
 			cognitoClient.signUp(signUpRequest);
 
+			context.getLogger().log("User registered successfully: " + email);
 			return response(200, "User registered successfully. Please confirm your email.");
 		} catch (CognitoIdentityProviderException e) {
+			context.getLogger().log("Signup error for email " + body.get("email").asText() + ": " + e.awsErrorDetails().errorMessage());
 			return response(400, "Error: " + e.awsErrorDetails().errorMessage());
 		}
 	}
 
-	private Map<String, Object> handleSignIn(JsonNode body) {
+	private Map<String, Object> handleSignIn(JsonNode body, Context context) {
 		try {
 			String email = body.get("email").asText();
 			String password = body.get("password").asText();
+
+			context.getLogger().log("Signin attempt with email: " + email);
 
 			Map<String, String> authParams = new HashMap<>();
 			authParams.put("USERNAME", email);
@@ -108,8 +123,10 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
 
 			AdminInitiateAuthResponse authResponse = cognitoClient.adminInitiateAuth(authRequest);
 
+			context.getLogger().log("Signin successful for email: " + email);
 			return response(200, authResponse.authenticationResult().idToken());
 		} catch (CognitoIdentityProviderException e) {
+			context.getLogger().log("Signin failed for email " + body.get("email").asText() + ": " + e.awsErrorDetails().errorMessage());
 			return response(400, "Authentication failed: " + e.awsErrorDetails().errorMessage());
 		}
 	}
