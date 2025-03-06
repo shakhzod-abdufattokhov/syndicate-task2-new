@@ -66,29 +66,27 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
 			String password = body.get("password").asText();
 
 			if (!EMAIL_PATTERN.matcher(email).matches()) {
-				return response(400, "Invalid email format");
+				return response(400, "Invalid email format.");
 			}
 			if (!PASSWORD_PATTERN.matcher(password).matches()) {
-				return response(400, "Password must be 12+ chars, alphanumeric + any of $%^*-_");
+				return response(400, "Password must be at least 12 characters long, contain letters, digits, and special characters.");
 			}
 
-			cognitoClient.adminCreateUser(AdminCreateUserRequest.builder()
-					.userPoolId(System.getenv("COGNITO_ID"))
+			SignUpRequest signUpRequest = SignUpRequest.builder()
+					.clientId(System.getenv("CLIENT_ID"))
 					.username(email)
-					.temporaryPassword(password)
+					.password(password)
 					.userAttributes(
 							AttributeType.builder().name("email").value(email).build(),
 							AttributeType.builder().name("email_verified").value("true").build()
 					)
-					.desiredDeliveryMediums(DeliveryMediumType.EMAIL)
-					.messageAction("SUPPRESS")
-					.build()
-			);
+					.build();
 
-			return response(200, "Sign-up process is successful");
+			cognitoClient.signUp(signUpRequest);
 
+			return response(200, "User registered successfully. Please confirm your email.");
 		} catch (CognitoIdentityProviderException e) {
-			return response(400, "Cognito Error: " + e.awsErrorDetails().errorMessage());
+			return response(400, "Error: " + e.awsErrorDetails().errorMessage());
 		}
 	}
 
@@ -97,42 +95,29 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
 			String email = body.get("email").asText();
 			String password = body.get("password").asText();
 
-			if (!EMAIL_PATTERN.matcher(email).matches()) {
-				return response(400, "Invalid email format");
-			}
-			if (!PASSWORD_PATTERN.matcher(password).matches()) {
-				return response(400, "Invalid password format");
-			}
+			Map<String, String> authParams = new HashMap<>();
+			authParams.put("USERNAME", email);
+			authParams.put("PASSWORD", password);
 
-			Map<String, String> authParams = Map.of(
-					"USERNAME", email,
-					"PASSWORD", password
-			);
-
-			AdminInitiateAuthResponse authResponse = cognitoClient.adminInitiateAuth(AdminInitiateAuthRequest.builder()
+			AdminInitiateAuthRequest authRequest = AdminInitiateAuthRequest.builder()
 					.authFlow(AuthFlowType.ADMIN_NO_SRP_AUTH)
-					.authParameters(authParams)
-					.userPoolId(System.getenv("COGNITO_ID"))
 					.clientId(System.getenv("CLIENT_ID"))
-					.build()
-			);
+					.userPoolId(System.getenv("COGNITO_ID"))
+					.authParameters(authParams)
+					.build();
 
-			String accessToken = authResponse.authenticationResult().idToken();
-			Map<String, Object> responseBody = new HashMap<>();
-			responseBody.put("accessToken", accessToken);
-			return response(200, responseBody);
+			AdminInitiateAuthResponse authResponse = cognitoClient.adminInitiateAuth(authRequest);
 
-		} catch (NotAuthorizedException | UserNotFoundException e) {
-			return response(400, "Invalid email or password");
+			return response(200, authResponse.authenticationResult().idToken());
 		} catch (CognitoIdentityProviderException e) {
-			return response(400, "Cognito Error: " + e.awsErrorDetails().errorMessage());
+			return response(400, "Authentication failed: " + e.awsErrorDetails().errorMessage());
 		}
 	}
 
-	private Map<String, Object> response(int statusCode, Object body) {
+	private Map<String, Object> response(int statusCode, String message) {
 		Map<String, Object> response = new HashMap<>();
 		response.put("statusCode", statusCode);
-		response.put("body", body instanceof String ? body : objectMapper.valueToTree(body));
+		response.put("body", message);
 		return response;
 	}
 }
