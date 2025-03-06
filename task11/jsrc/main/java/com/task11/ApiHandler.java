@@ -14,11 +14,12 @@ import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.cognitoidentityprovider.CognitoIdentityProviderClient;
 import software.amazon.awssdk.services.cognitoidentityprovider.model.*;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
-import software.amazon.awssdk.services.dynamodb.model.*;
 
-import java.util.*;
+import java.util.Map;
 import java.util.regex.Pattern;
-import static com.syndicate.deployment.model.environment.ValueTransformer.*;
+
+import static com.syndicate.deployment.model.environment.ValueTransformer.USER_POOL_NAME_TO_CLIENT_ID;
+import static com.syndicate.deployment.model.environment.ValueTransformer.USER_POOL_NAME_TO_USER_POOL_ID;
 
 @LambdaHandler(
 		lambdaName = "api_handler",
@@ -67,8 +68,12 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
 					return errorResponse(404, "Invalid path");
 			}
 		} catch (Exception e) {
-			return errorResponse(500, "Server error: " + e.getMessage());
-		}
+            try {
+                return errorResponse(500, "Server error: " + e.getMessage());
+            } catch (Exception ex) {
+                throw new RuntimeException(ex);
+            }
+        }
 	}
 
 	private Map<String, Object> handleSignUp(Map<String, Object> event) throws Exception {
@@ -138,15 +143,26 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
 		return Pattern.compile(PASSWORD_REGEX).matcher(password).matches();
 	}
 
-	private Map<String, Object> successResponse(Object data) {
-		return Map.of("statusCode", 200, "body", data);
-	}
-
-	private Map<String, Object> errorResponse(int statusCode, String message) {
-		return Map.of("statusCode", statusCode, "body", Map.of("error", message));
-	}
-
-	private Map<String, Object> invalidMethodResponse() {
+	private Map<String, Object> invalidMethodResponse() throws Exception {
 		return errorResponse(405, "Method Not Allowed");
 	}
+
+	private Map<String, Object> successResponse(Object data) throws Exception {
+		return Map.of(
+				"statusCode", 200,
+				"headers", Map.of("Content-Type", "application/json"),
+				"body", objectMapper.writeValueAsString(Map.of("data", data))
+		);
+	}
+
+	private Map<String, Object> errorResponse(int statusCode, String message) throws Exception {
+		return Map.of(
+				"statusCode", statusCode,
+				"headers", Map.of("Content-Type", "application/json"),
+				"body", objectMapper.writeValueAsString(Map.of("error", message))
+		);
+	}
+
+
+
 }
