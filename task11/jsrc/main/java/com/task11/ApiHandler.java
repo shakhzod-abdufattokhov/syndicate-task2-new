@@ -52,34 +52,42 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
 			String httpMethod = (String) event.get("httpMethod");
 			JsonNode body = objectMapper.readTree((String) event.get("body"));
 
+			context.getLogger().log("Received request: Path=" + path + ", Method=" + httpMethod);
+
 			if ("/signup".equals(path) && "POST".equalsIgnoreCase(httpMethod)) {
-				return handleSignUp(body);
+				return handleSignUp(body, context);
 			} else if ("/signin".equals(path) && "POST".equalsIgnoreCase(httpMethod)) {
-				return handleSignIn(body);
+				return handleSignIn(body, context);
 			}
 
 			return response(400, "Invalid request");
 		} catch (Exception e) {
+			context.getLogger().log("Error processing request: " + e.getMessage());
 			return response(400, "Error processing request: " + e.getMessage());
 		}
 	}
 
-	private Map<String, Object> handleSignUp(JsonNode body) {
+	private Map<String, Object> handleSignUp(JsonNode body, Context context) {
 		try {
 			String email = body.get("email").asText();
 			String password = body.get("password").asText();
 
+			context.getLogger().log("Handling signup for email: " + email);
+
 			if (!EMAIL_PATTERN.matcher(email).matches()) {
+				context.getLogger().log("Invalid email format: " + email);
 				return response(400, "Invalid email format.");
 			}
 			if (!PASSWORD_PATTERN.matcher(password).matches()) {
+				context.getLogger().log("Invalid password format.");
 				return response(400, "Password must be at least 12 characters long, contain letters, digits, and special characters.");
 			}
 
+			String userPoolId = System.getenv("COGNITO_ID");
+
 			AdminCreateUserRequest createUserRequest = AdminCreateUserRequest.builder()
-					.userPoolId(System.getenv("COGNITO_ID"))
+					.userPoolId(userPoolId)
 					.username(email)
-					.temporaryPassword(password)
 					.userAttributes(
 							AttributeType.builder().name("email").value(email).build(),
 							AttributeType.builder().name("email_verified").value("true").build()
@@ -88,26 +96,31 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
 					.build();
 
 			cognitoClient.adminCreateUser(createUserRequest);
+			context.getLogger().log("User created successfully in Cognito.");
 
 			AdminSetUserPasswordRequest setUserPasswordRequest = AdminSetUserPasswordRequest.builder()
-					.userPoolId(System.getenv("COGNITO_ID"))
+					.userPoolId(userPoolId)
 					.username(email)
 					.password(password)
 					.permanent(true)
 					.build();
 
 			cognitoClient.adminSetUserPassword(setUserPasswordRequest);
+			context.getLogger().log("Password set successfully for user: " + email);
 
 			return response(200, "User registered successfully.");
 		} catch (CognitoIdentityProviderException e) {
+			context.getLogger().log("Cognito error: " + e.awsErrorDetails().errorMessage());
 			return response(400, "Error: " + e.awsErrorDetails().errorMessage());
 		}
 	}
 
-	private Map<String, Object> handleSignIn(JsonNode body) {
+	private Map<String, Object> handleSignIn(JsonNode body, Context context) {
 		try {
 			String email = body.get("email").asText();
 			String password = body.get("password").asText();
+
+			context.getLogger().log("Handling signin for email: " + email);
 
 			Map<String, String> authParams = new HashMap<>();
 			authParams.put("USERNAME", email);
@@ -116,13 +129,22 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
 			AdminInitiateAuthRequest authRequest = AdminInitiateAuthRequest.builder()
 					.authFlow(AuthFlowType.ADMIN_NO_SRP_AUTH)
 					.userPoolId(System.getenv("COGNITO_ID"))
+					.clientId(System.getenv("CLIENT_ID"))
 					.authParameters(authParams)
 					.build();
 
 			AdminInitiateAuthResponse authResponse = cognitoClient.adminInitiateAuth(authRequest);
+			context.getLogger().log("User authenticated successfully: " + email);
 
 			return response(200, authResponse.authenticationResult().idToken());
+		} catch (UserNotFoundException e) {
+			context.getLogger().log("User not found: " + e.getMessage());
+			return response(400, "User does not exist.");
+		} catch (NotAuthorizedException e) {
+			context.getLogger().log("Invalid password for user: " + e.getMessage());
+			return response(400, "Invalid username or password.");
 		} catch (CognitoIdentityProviderException e) {
+			context.getLogger().log("Cognito error: " + e.awsErrorDetails().errorMessage());
 			return response(400, "Authentication failed: " + e.awsErrorDetails().errorMessage());
 		}
 	}
