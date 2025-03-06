@@ -39,7 +39,7 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
 	private static final Pattern EMAIL_PATTERN = Pattern.compile("^[A-Za-z0-9+_.-]+@(.+)$");
-	private static final int MIN_PASSWORD_LENGTH = 8;
+	private static final int MIN_PASSWORD_LENGTH = 12; // Enforced password policy
 
 	@Override
 	public Map<String, Object> handleRequest(Map<String, Object> event, Context context) {
@@ -70,11 +70,24 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
 		}
 
 		if (!isValidPassword(password)) {
-			return createResponse(400, "Password must be at least " + MIN_PASSWORD_LENGTH + " characters long");
+			return createResponse(400, "Password must be at least " + MIN_PASSWORD_LENGTH + " characters long and include special characters.");
 		}
 
 		try {
-			AdminCreateUserRequest request = AdminCreateUserRequest.builder()
+			// Check if user already exists
+			cognitoClient.adminGetUser(AdminGetUserRequest.builder()
+					.userPoolId(System.getenv("COGNITO_ID"))
+					.username(email)
+					.build());
+
+			return createResponse(400, "User already exists");
+		} catch (UserNotFoundException ignored) {
+			// Expected if user does not exist
+		}
+
+		try {
+			// Create the user
+			AdminCreateUserRequest createUserRequest = AdminCreateUserRequest.builder()
 					.userPoolId(System.getenv("COGNITO_ID"))
 					.username(email)
 					.temporaryPassword(password)
@@ -85,7 +98,16 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
 					)
 					.build();
 
-			cognitoClient.adminCreateUser(request);
+			cognitoClient.adminCreateUser(createUserRequest);
+
+			// Set a permanent password
+			cognitoClient.adminSetUserPassword(AdminSetUserPasswordRequest.builder()
+					.userPoolId(System.getenv("COGNITO_ID"))
+					.username(email)
+					.password(password)
+					.permanent(true)
+					.build());
+
 			return createResponse(200, "User registered successfully");
 		} catch (CognitoIdentityProviderException e) {
 			return createResponse(400, "Signup failed: " + e.awsErrorDetails().errorMessage());
@@ -118,7 +140,7 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
 	}
 
 	private boolean isValidPassword(String password) {
-		return password.length() >= MIN_PASSWORD_LENGTH;
+		return password.length() >= MIN_PASSWORD_LENGTH && password.matches(".*[!@#$%^&*].*");
 	}
 
 	private JsonNode parseBody(Map<String, Object> event) {
