@@ -62,8 +62,6 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
 
 	private Map<String, Object> handleSignUp(JsonNode body) {
 		try {
-			String firstName = body.get("firstName").asText();
-			String lastName = body.get("lastName").asText();
 			String email = body.get("email").asText();
 			String password = body.get("password").asText();
 
@@ -74,15 +72,16 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
 				return response(400, "Password must be 12+ chars, alphanumeric + any of $%^*-_");
 			}
 
-			cognitoClient.signUp(SignUpRequest.builder()
-					.clientId(System.getenv("CLIENT_ID"))
+			cognitoClient.adminCreateUser(AdminCreateUserRequest.builder()
+					.userPoolId(System.getenv("COGNITO_ID"))
 					.username(email)
-					.password(password)
+					.temporaryPassword(password)
 					.userAttributes(
-							AttributeType.builder().name("given_name").value(firstName).build(),
-							AttributeType.builder().name("family_name").value(lastName).build(),
-							AttributeType.builder().name("email").value(email).build()
+							AttributeType.builder().name("email").value(email).build(),
+							AttributeType.builder().name("email_verified").value("true").build()
 					)
+					.desiredDeliveryMediums(DeliveryMediumType.EMAIL)
+					.messageAction("SUPPRESS")
 					.build()
 			);
 
@@ -105,18 +104,23 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
 				return response(400, "Invalid password format");
 			}
 
-			InitiateAuthResponse authResponse = cognitoClient.initiateAuth(InitiateAuthRequest.builder()
-					.authFlow(AuthFlowType.USER_PASSWORD_AUTH)
+			Map<String, String> authParams = Map.of(
+					"USERNAME", email,
+					"PASSWORD", password
+			);
+
+			AdminInitiateAuthResponse authResponse = cognitoClient.adminInitiateAuth(AdminInitiateAuthRequest.builder()
+					.authFlow(AuthFlowType.ADMIN_NO_SRP_AUTH)
+					.authParameters(authParams)
+					.userPoolId(System.getenv("COGNITO_ID"))
 					.clientId(System.getenv("CLIENT_ID"))
-					.authParameters(Map.of("USERNAME", email, "PASSWORD", password))
 					.build()
 			);
 
-			String accessToken = authResponse.authenticationResult().idToken(); // Use ID token for API authentication
-
-			Map<String, Object> response = new HashMap<>();
-			response.put("accessToken", accessToken);
-			return response(200, response);
+			String accessToken = authResponse.authenticationResult().idToken();
+			Map<String, Object> responseBody = new HashMap<>();
+			responseBody.put("accessToken", accessToken);
+			return response(200, responseBody);
 
 		} catch (NotAuthorizedException | UserNotFoundException e) {
 			return response(400, "Invalid email or password");
