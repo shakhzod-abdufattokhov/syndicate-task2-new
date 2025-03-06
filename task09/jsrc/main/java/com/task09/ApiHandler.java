@@ -15,7 +15,7 @@ import java.util.Map;
 
 @LambdaLayer(
 		layerName = "sdk_layer",
-		libraries = {"lib/commons-lang3-3.14.0.jar", "lib/gson-2.10.1.jar", "jackson-databind-2.18.2.jar"},
+		libraries = {"lib/commons-lang3-3.14.0.jar", "lib/gson-2.10.1.jar"},
 		runtime = DeploymentRuntime.JAVA11,
 		architectures = {Architecture.ARM64},
 		artifactExtension = ArtifactExtension.ZIP
