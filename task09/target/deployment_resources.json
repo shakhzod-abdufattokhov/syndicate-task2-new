@@ -19,7 +19,16 @@
     "tags" : { },
     "publish_version" : true,
     "alias" : "${lambdas_alias_name}",
+    "layers" : [ "sdk_layer" ],
     "logs_expiration" : "${logs_expiration}",
     "snap_start" : "None"
+  },
+  "sdk_layer" : {
+    "name" : "sdk_layer",
+    "runtimes" : [ "java11" ],
+    "resource_type" : "lambda_layer",
+    "deployment_package" : "sdk_layer-assembly.zip",
+    "libraries" : [ "lib/commons-lang3-3.14.0.jar", "lib/gson-2.10.1.jar", "jackson-databind-2.18.2.jar" ],
+    "architectures" : [ "arm64" ]
   }
 }
