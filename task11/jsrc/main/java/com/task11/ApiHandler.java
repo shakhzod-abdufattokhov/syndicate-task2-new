@@ -38,16 +38,32 @@ import static com.syndicate.deployment.model.environment.ValueTransformer.USER_P
 public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyResponseEvent> {
 
     private static final String EMAIL_REGEX = "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$";
-    private static final String PASSWORD_REGEX = "^(?=.*[A-Z])(?=.*[a-z])(?=.*\\d)(?=.*[@#$%^&+=!\\-_]).{12,}$";
+    private static final String PASSWORD_REGEX = "^(?=.*[A-Z])(?=.*[a-z])(?=.*\\d)(?=.*[@#$%^&+=!\\-_]).{8,}$";
 
     private final CognitoIdentityProviderClient cognitoClient;
     private final ObjectMapper objectMapper;
+    private final String userPoolId;
+    private final String clientId;
 
     public ApiHandler() {
-        this.cognitoClient = CognitoIdentityProviderClient.builder()
-                .region(Region.of(System.getenv("REGION")))
-                .build();
         this.objectMapper = new ObjectMapper();
+        String region = System.getenv("REGION");
+        this.userPoolId = System.getenv("COGNITO_ID");
+        this.clientId = System.getenv("CLIENT_ID");
+
+        if (region == null || region.isEmpty()) {
+            throw new IllegalStateException("Environment variable 'REGION' is not set.");
+        }
+        if (userPoolId == null || userPoolId.equals("N/A")) {
+            throw new IllegalStateException("Invalid or missing 'COGNITO_ID'.");
+        }
+        if (clientId == null || clientId.equals("N/A")) {
+            throw new IllegalStateException("Invalid or missing 'CLIENT_ID'.");
+        }
+
+        this.cognitoClient = CognitoIdentityProviderClient.builder()
+                .region(Region.of(region))
+                .build();
     }
 
     public APIGatewayProxyResponseEvent handleRequest(APIGatewayProxyRequestEvent event, Context context) {
@@ -59,118 +75,101 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
         try {
             switch (path) {
                 case "/signup":
-                    return "POST".equalsIgnoreCase(httpMethod) ? handleSignUp(event, context) : invalidMethodResponse(context);
+                    return "POST".equalsIgnoreCase(httpMethod) ? handleSignUp(event, context) : invalidMethodResponse();
                 case "/signin":
-                    return "POST".equalsIgnoreCase(httpMethod) ? handleSignIn(event, context) : invalidMethodResponse(context);
+                    return "POST".equalsIgnoreCase(httpMethod) ? handleSignIn(event, context) : invalidMethodResponse();
                 default:
-                    return errorResponse(400, "Invalid path: " + path, context);
+                    return errorResponse(400, "Invalid path: " + path);
             }
         } catch (Exception e) {
             context.getLogger().log("Error: " + e.getMessage());
-            return errorResponse(500, "Server error: " + (e.getMessage() != null ? e.getMessage() : "Unknown error at path: " + path), context);
+            return errorResponse(500, "Server error: " + e.getMessage());
         }
     }
 
     private APIGatewayProxyResponseEvent handleSignUp(APIGatewayProxyRequestEvent event, Context context) throws Exception {
         JsonNode body = objectMapper.readTree(event.getBody());
-        String email = body.get("email").asText();
-        String password = body.get("password").asText();
-
-        context.getLogger().log("Processing signup for email: " + email + "and password: "+password);
+        String email = body.has("email") ? body.get("email").asText() : "";
+        String password = body.has("password") ? body.get("password").asText() : "";
 
         if (!isValidEmail(email)) {
-            return errorResponse(400, "Invalid email format.", context);
+            return errorResponse(400, "Invalid email format.");
         }
         if (!isValidPassword(password)) {
-            return errorResponse(400, "Password does not meet security requirements.", context);
+            return errorResponse(400, "Password does not meet security requirements.");
         }
 
         try {
             AdminCreateUserRequest signUpRequest = AdminCreateUserRequest.builder()
-                    .userPoolId(System.getenv("COGNITO_ID"))
+                    .userPoolId(userPoolId)
                     .username(email)
                     .temporaryPassword(password)
                     .messageAction(MessageActionType.SUPPRESS)
                     .build();
             cognitoClient.adminCreateUser(signUpRequest);
 
-            context.getLogger().log("User registered successfully: " + email);
-            return successResponse("User registered successfully.", context);
+            return successResponse("User registered successfully.");
         } catch (UsernameExistsException e) {
-            context.getLogger().log("Signup error: User already exists - " + email);
-            return errorResponse(400, "User already exists.", context);
+            return errorResponse(400, "User already exists.");
         } catch (Exception e) {
-            context.getLogger().log("Signup error: " + e.getMessage());
-            return errorResponse(500, "Signup error: " + e.getMessage(), context);
+            return errorResponse(500, "Signup error: " + e.getMessage());
         }
     }
 
     private APIGatewayProxyResponseEvent handleSignIn(APIGatewayProxyRequestEvent event, Context context) throws Exception {
         JsonNode body = objectMapper.readTree(event.getBody());
-        String email = body.get("email").asText();
-        String password = body.get("password").asText();
-
-        context.getLogger().log("Processing signin for email: " + email + "and password: "+ password);
+        String email = body.has("email") ? body.get("email").asText() : "";
+        String password = body.has("password") ? body.get("password").asText() : "";
 
         if (!isValidEmail(email)) {
-            return errorResponse(400, "Invalid email format.", context);
+            return errorResponse(400, "Invalid email format.");
         }
         if (!isValidPassword(password)) {
-            return errorResponse(400, "Password does not meet security requirements.", context);
+            return errorResponse(400, "Password does not meet security requirements.");
         }
 
         try {
             InitiateAuthRequest authRequest = InitiateAuthRequest.builder()
                     .authFlow(AuthFlowType.USER_PASSWORD_AUTH)
-                    .clientId(System.getenv("CLIENT_ID"))
+                    .clientId(clientId)
                     .authParameters(Map.of("USERNAME", email, "PASSWORD", password))
                     .build();
             InitiateAuthResponse authResponse = cognitoClient.initiateAuth(authRequest);
 
-            context.getLogger().log("Login successful for email: " + email);
             return successResponse(Map.of(
                     "message", "Login successful",
                     "token", authResponse.authenticationResult().idToken()
-            ), context);
+            ));
         } catch (NotAuthorizedException e) {
-            context.getLogger().log("Signin error: Invalid credentials for email - " + email);
-            return errorResponse(400, "Invalid credentials.", context);
+            return errorResponse(400, "Invalid credentials.");
         } catch (UserNotFoundException e) {
-            context.getLogger().log("Signin error: User does not exist - " + email);
-            return errorResponse(400, "User does not exist.", context);
+            return errorResponse(400, "User does not exist.");
         } catch (Exception e) {
-            context.getLogger().log("Signin error: " + e.getMessage());
-            return errorResponse(500, "Signin error: " + e.getMessage(), context);
+            return errorResponse(500, "Signin error: " + e.getMessage());
         }
     }
 
     private boolean isValidEmail(String email) {
-        return Pattern.compile(EMAIL_REGEX).matcher(email).matches();
+        return email != null && Pattern.compile(EMAIL_REGEX).matcher(email).matches();
     }
 
     private boolean isValidPassword(String password) {
-        return Pattern.compile(PASSWORD_REGEX).matcher(password).matches();
+        return password != null && Pattern.compile(PASSWORD_REGEX).matcher(password).matches();
     }
 
-    private APIGatewayProxyResponseEvent invalidMethodResponse(Context context) {
-        context.getLogger().log("Error: Method Not Allowed");
-        return errorResponse(400, "Method Not Allowed", context);
+    private APIGatewayProxyResponseEvent invalidMethodResponse() {
+        return errorResponse(405, "Method Not Allowed");
     }
 
-    private APIGatewayProxyResponseEvent successResponse(Object data, Context context) throws Exception {
-        String response = objectMapper.writeValueAsString(Map.of("data", data));
-        context.getLogger().log("Response: " + response);
+    private APIGatewayProxyResponseEvent successResponse(Object message) {
         return new APIGatewayProxyResponseEvent()
                 .withStatusCode(200)
-                .withHeaders(Map.of("Content-Type", "application/json"))
-                .withBody(response);
+                .withBody(message instanceof String ? (String) message : message.toString());
     }
 
-    private APIGatewayProxyResponseEvent errorResponse(int statusCode, String message, Context context) {
-        context.getLogger().log("Error response: " + message);
+    private APIGatewayProxyResponseEvent errorResponse(int statusCode, String message) {
         return new APIGatewayProxyResponseEvent()
                 .withStatusCode(statusCode)
-                .withHeaders(Map.of("Content-Type", "application/json"))
                 .withBody("{\"error\": \"" + message + "\"}");
     }
 }
