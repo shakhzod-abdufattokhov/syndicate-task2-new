@@ -58,9 +58,9 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
 
         try {
             switch (path) {
-                case "signup":
+                case "/signup":
                     return "POST".equalsIgnoreCase(httpMethod) ? handleSignUp(event, context) : invalidMethodResponse(context);
-                case "signin":
+                case "/signin":
                     return "POST".equalsIgnoreCase(httpMethod) ? handleSignIn(event, context) : invalidMethodResponse(context);
                 default:
                     return errorResponse(400, "Invalid path: " + path, context);
