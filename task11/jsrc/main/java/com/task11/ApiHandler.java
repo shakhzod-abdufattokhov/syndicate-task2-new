@@ -151,5 +151,6 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
                 .withStatusCode(statusCode)
                 .withHeaders(Map.of("Content-Type", "application/json"))
                 .withBody("{\"error\": \"" + message + "\"}");
+
     }
 }
