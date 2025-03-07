@@ -51,22 +51,23 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
     }
 
     public APIGatewayProxyResponseEvent handleRequest(APIGatewayProxyRequestEvent event, Context context) {
-        String path = event.getPath().replaceFirst("^/api/", ""); // Remove '/api/' prefix
+        String path = event.getPath();
         String httpMethod = event.getHttpMethod();
+        return errorResponse(400, "path: "+ path + " \"  httpMethod" + httpMethod );
 
-        try {
-            switch (path) {
-                case "signup":
-                    return "POST".equalsIgnoreCase(httpMethod) ? handleSignUp(event) : invalidMethodResponse();
-                case "signin":
-                    return "POST".equalsIgnoreCase(httpMethod) ? handleSignIn(event) : invalidMethodResponse();
-                default:
-                    return errorResponse(404, "Invalid path: " + path);
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-            return errorResponse(500, "Server error: " + (e.getMessage() != null ? e.getMessage() : "Unknown error at path: " + path));
-        }
+//        try {
+//            switch (path) {
+//                case "signup":
+//                    return "POST".equalsIgnoreCase(httpMethod) ? handleSignUp(event) : invalidMethodResponse();
+//                case "signin":
+//                    return "POST".equalsIgnoreCase(httpMethod) ? handleSignIn(event) : invalidMethodResponse();
+//                default:
+//                    return errorResponse(404, "Invalid path: " + path);
+//            }
+//        } catch (Exception e) {
+//            e.printStackTrace();
+//            return errorResponse(500, "Server error: " + (e.getMessage() != null ? e.getMessage() : "Unknown error at path: " + path));
+//        }
     }
 
     private APIGatewayProxyResponseEvent handleSignUp(APIGatewayProxyRequestEvent event) throws Exception {

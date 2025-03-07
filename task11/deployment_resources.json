@@ -89,7 +89,6 @@
       },
       "/signup": {
         "enable_cors": true,
-        "enable_proxy": true,
         "POST": {
           "authorization_type": "NONE",
           "integration_type": "lambda",
