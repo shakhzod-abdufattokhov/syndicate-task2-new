@@ -171,10 +171,16 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
             }
 
             context.getLogger().log("Login successful for email: " + email);
-            return successResponse(Map.of(
+            Map<String, String> message = Map.of(
                     "message", "Login successful",
-                    "accessToken", authResponse.authenticationResult().accessToken()
-            ), context);
+                    "accessToken", authResponse.authenticationResult().accessToken());
+
+
+            return new APIGatewayProxyResponseEvent()
+                    .withStatusCode(200)
+                    .withHeaders(Map.of("Content-Type", "application/json"))
+                    .withBody(objectMapper.writeValueAsString( message));
+
         } catch (NotAuthorizedException e) {
             context.getLogger().log("Signin error: Invalid credentials for email - " + email);
             return errorResponse(400, "Invalid credentials.", context);
