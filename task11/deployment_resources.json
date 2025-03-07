@@ -74,8 +74,8 @@
     "resources": {
       "/signin": {
         "enable_cors": true,
-        "enable_proxy": true,
         "POST": {
+          "enable_proxy": true,
           "authorization_type": "NONE",
           "integration_type": "lambda",
           "lambda_name": "api_handler",
@@ -90,6 +90,7 @@
       "/signup": {
         "enable_cors": true,
         "POST": {
+          "enable_proxy": true,
           "authorization_type": "NONE",
           "integration_type": "lambda",
           "lambda_name": "api_handler",
@@ -103,8 +104,8 @@
       },
       "/tables": {
         "enable_cors": true,
-        "enable_proxy": true,
         "GET": {
+          "enable_proxy": true,
           "authorization_type": "authorizer",
           "integration_type": "lambda",
           "lambda_name": "api_handler",
@@ -116,6 +117,7 @@
           "default_error_pattern": true
         },
         "POST": {
+          "enable_proxy": true,
           "authorization_type": "authorizer",
           "integration_type": "lambda",
           "lambda_name": "api_handler",
@@ -129,8 +131,8 @@
       },
       "/tables/{tableId}": {
         "enable_cors": true,
-        "enable_proxy": true,
         "GET": {
+          "enable_proxy": true,
           "authorization_type": "authorizer",
           "integration_type": "lambda",
           "lambda_name": "api_handler",
@@ -144,8 +146,8 @@
       },
       "/reservations": {
         "enable_cors": true,
-        "enable_proxy": true,
         "GET": {
+          "enable_proxy": true,
           "authorization_type": "authorizer",
           "integration_type": "lambda",
           "lambda_name": "api_handler",
@@ -157,6 +159,7 @@
           "default_error_pattern": true
         },
         "POST": {
+          "enable_proxy": true,
           "authorization_type": "authorizer",
           "integration_type": "lambda",
           "lambda_name": "api_handler",
