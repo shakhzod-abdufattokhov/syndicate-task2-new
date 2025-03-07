@@ -59,7 +59,16 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
 	@Override
 	public Map<String, Object> handleRequest(Map<String, Object> event, Context context) {
 		Map<String, Object> requestContext = (Map<String, Object>) event.get("requestContext");
+
+		if (requestContext == null) {
+			return errorResponse(500, "Server error: requestContext is missing");
+		}
+
 		Map<String, String> httpInfo = (Map<String, String>) requestContext.get("http");
+
+		if (httpInfo == null) {
+			return errorResponse(500, "Server error: http information is missing in requestContext");
+		}
 
 		String path = httpInfo.get("path");
 		String httpMethod = httpInfo.get("method");
@@ -71,17 +80,14 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
 				case "/signin":
 					return "POST".equalsIgnoreCase(httpMethod) ? handleSignIn(event) : invalidMethodResponse();
 				default:
-					return errorResponse(404, "Invalid path" + path);
+					return errorResponse(404, "Invalid path: " + path);
 			}
 		} catch (Exception e) {
 			e.printStackTrace();
-			try {
-				return errorResponse(500, "Server error: " + (e.getMessage() != null ? e.getMessage() : "Unknown error path: "+path));
-			} catch (Exception ex) {
-				throw new RuntimeException(ex);
-			}
+			return errorResponse(500, "Server error: " + (e.getMessage() != null ? e.getMessage() : "Unknown error at path: " + path));
 		}
 	}
+
 
 	private Map<String, Object> handleSignUp(Map<String, Object> event) throws Exception {
 		JsonNode body = objectMapper.readTree((String) event.get("body"));
@@ -161,11 +167,11 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
 		);
 	}
 
-	private Map<String, Object> errorResponse(int statusCode, String message) throws Exception {
+	private Map<String, Object> errorResponse(int statusCode, String message)  {
 		return Map.of(
 				"statusCode", statusCode,
 				"headers", Map.of("Content-Type", "application/json"),
-				"body", objectMapper.writeValueAsString(Map.of("error", message))
+				"body", (Map.of("error", message))
 		);
 	}
 
