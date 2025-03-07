@@ -18,6 +18,7 @@ import software.amazon.awssdk.services.cognitoidentityprovider.CognitoIdentityPr
 import software.amazon.awssdk.services.cognitoidentityprovider.model.*;
 
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -27,7 +28,7 @@ import static com.syndicate.deployment.model.environment.ValueTransformer.USER_P
 @LambdaHandler(
         lambdaName = "api_handler",
         roleName = "api_handler-role",
-        runtime = DeploymentRuntime.JAVA21,
+        runtime = DeploymentRuntime.JAVA11,
         isPublishVersion = true,
         aliasName = "${lambdas_alias_name}",
         logsExpiration = RetentionSetting.SYNDICATE_ALIASES_SPECIFIED
@@ -113,13 +114,12 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
     }
 
 
-
     private APIGatewayProxyResponseEvent handleSignIn(APIGatewayProxyRequestEvent event, Context context) throws Exception {
         JsonNode body = objectMapper.readTree(event.getBody());
         String email = body.get("email").asText();
         String password = body.get("password").asText();
 
-        context.getLogger().log("Processing signin for email: " + email + " and password: " + password);
+        context.getLogger().log("Processing sign-in for email: " + email);
 
         if (!isValidEmail(email)) {
             return errorResponse(400, "Invalid email format.", context);
@@ -129,34 +129,66 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
         }
 
         try {
-            // Use AdminInitiateAuthRequest instead of InitiateAuthRequest
-            AdminInitiateAuthRequest authRequest = AdminInitiateAuthRequest.builder()
-                    .authFlow(AuthFlowType.ADMIN_NO_SRP_AUTH)  // Use admin authentication flow
-                    .userPoolId(System.getenv("COGNITO_ID"))  // Specify the Cognito user pool ID
-                    .clientId(System.getenv("CLIENT_ID"))  // Still requires client ID
+            AdminGetUserResponse userResponse = cognitoClient.adminGetUser(AdminGetUserRequest.builder()
+                    .userPoolId(System.getenv("COGNITO_ID"))
+                    .username(email)
+                    .build());
+
+            if (userResponse.userStatus() != UserStatusType.CONFIRMED) {
+                confirmSignUp(email, password);
+            }
+
+            AdminInitiateAuthResponse authResponse = cognitoClient.adminInitiateAuth(AdminInitiateAuthRequest.builder()
+                    .authFlow(AuthFlowType.ADMIN_NO_SRP_AUTH)
+                    .userPoolId(System.getenv("COGNITO_ID"))
+                    .clientId(System.getenv("CLIENT_ID"))
                     .authParameters(Map.of(
                             "USERNAME", email,
                             "PASSWORD", password
                     ))
-                    .build();
+                    .build());
 
-            AdminInitiateAuthResponse authResponse = cognitoClient.adminInitiateAuth(authRequest);
-
-            context.getLogger().log("Login successful for email: " + email);
             return successResponse(Map.of(
                     "message", "Login successful",
                     "token", authResponse.authenticationResult().idToken()
             ), context);
         } catch (NotAuthorizedException e) {
-            context.getLogger().log("Signin error: Invalid credentials for email - " + email);
             return errorResponse(400, "Invalid credentials.", context);
         } catch (UserNotFoundException e) {
-            context.getLogger().log("Signin error: User does not exist - " + email);
             return errorResponse(400, "User does not exist.", context);
         } catch (Exception e) {
-            context.getLogger().log("Signin error: " + e.getMessage());
             return errorResponse(500, "Signin error: " + e.getMessage(), context);
         }
+    }
+
+
+    private AdminRespondToAuthChallengeResponse confirmSignUp(String email, String password) {
+        AdminInitiateAuthResponse authResponse = cognitoClient.adminInitiateAuth(AdminInitiateAuthRequest.builder()
+                .authFlow(AuthFlowType.ADMIN_NO_SRP_AUTH)
+                .userPoolId(System.getenv("COGNITO_ID"))
+                .clientId(System.getenv("CLIENT_ID"))
+                .authParameters(Map.of(
+                        "USERNAME", email,
+                        "PASSWORD", password
+                ))
+                .build());
+
+        if (ChallengeNameType.NEW_PASSWORD_REQUIRED.name().equals(authResponse.challengeNameAsString())) {
+            Map<String, String> challengeResponses = Map.of(
+                    "USERNAME", email,
+                    "PASSWORD", password,
+                    "NEW_PASSWORD", password
+            );
+
+            return cognitoClient.adminRespondToAuthChallenge(AdminRespondToAuthChallengeRequest.builder()
+                    .challengeName(ChallengeNameType.NEW_PASSWORD_REQUIRED)
+                    .challengeResponses(challengeResponses)
+                    .userPoolId(System.getenv("COGNITO_ID"))
+                    .clientId(System.getenv("CLIENT_ID"))
+                    .session(authResponse.session())
+                    .build());
+        }
+        return null;
     }
 
 
