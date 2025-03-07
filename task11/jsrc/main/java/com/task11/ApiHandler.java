@@ -53,33 +53,36 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
     public APIGatewayProxyResponseEvent handleRequest(APIGatewayProxyRequestEvent event, Context context) {
         String path = event.getPath();
         String httpMethod = event.getHttpMethod();
-//        return errorResponse(400, "path: "+ path + " \"  httpMethod" + httpMethod );
+
+        context.getLogger().log("Received request: Path = " + path + ", Method = " + httpMethod);
 
         try {
             switch (path) {
                 case "signup":
-                    return "POST".equalsIgnoreCase(httpMethod) ? handleSignUp(event) : invalidMethodResponse();
+                    return "POST".equalsIgnoreCase(httpMethod) ? handleSignUp(event, context) : invalidMethodResponse(context);
                 case "signin":
-                    return "POST".equalsIgnoreCase(httpMethod) ? handleSignIn(event) : invalidMethodResponse();
+                    return "POST".equalsIgnoreCase(httpMethod) ? handleSignIn(event, context) : invalidMethodResponse(context);
                 default:
-                    return errorResponse(404, "Invalid path: " + path);
+                    return errorResponse(400, "Invalid path: " + path, context);
             }
         } catch (Exception e) {
-            e.printStackTrace();
-            return errorResponse(500, "Server error: " + (e.getMessage() != null ? e.getMessage() : "Unknown error at path: " + path));
+            context.getLogger().log("Error: " + e.getMessage());
+            return errorResponse(500, "Server error: " + (e.getMessage() != null ? e.getMessage() : "Unknown error at path: " + path), context);
         }
     }
 
-    private APIGatewayProxyResponseEvent handleSignUp(APIGatewayProxyRequestEvent event) throws Exception {
+    private APIGatewayProxyResponseEvent handleSignUp(APIGatewayProxyRequestEvent event, Context context) throws Exception {
         JsonNode body = objectMapper.readTree(event.getBody());
         String email = body.get("email").asText();
         String password = body.get("password").asText();
 
+        context.getLogger().log("Processing signup for email: " + email);
+
         if (!isValidEmail(email)) {
-            return errorResponse(400, "Invalid email format.");
+            return errorResponse(400, "Invalid email format.", context);
         }
         if (!isValidPassword(password)) {
-            return errorResponse(400, "Password must be at least 12 characters, include uppercase, lowercase, number, and special character.");
+            return errorResponse(400, "Password does not meet security requirements.", context);
         }
 
         try {
@@ -87,24 +90,30 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
                     .userPoolId(System.getenv("COGNITO_ID"))
                     .username(email)
                     .temporaryPassword(password)
-                    .messageAction(MessageActionType.SUPPRESS) // Prevent email notifications during testing
+                    .messageAction(MessageActionType.SUPPRESS)
                     .build();
             cognitoClient.adminCreateUser(signUpRequest);
-            return successResponse("User registered successfully.");
+
+            context.getLogger().log("User registered successfully: " + email);
+            return successResponse("User registered successfully.", context);
         } catch (UsernameExistsException e) {
-            return errorResponse(400, "User already exists.");
+            context.getLogger().log("Signup error: User already exists - " + email);
+            return errorResponse(400, "User already exists.", context);
         } catch (Exception e) {
-            return errorResponse(500, "Signup error: " + e.getMessage());
+            context.getLogger().log("Signup error: " + e.getMessage());
+            return errorResponse(500, "Signup error: " + e.getMessage(), context);
         }
     }
 
-    private APIGatewayProxyResponseEvent handleSignIn(APIGatewayProxyRequestEvent event) throws Exception {
+    private APIGatewayProxyResponseEvent handleSignIn(APIGatewayProxyRequestEvent event, Context context) throws Exception {
         JsonNode body = objectMapper.readTree(event.getBody());
         String email = body.get("email").asText();
         String password = body.get("password").asText();
 
+        context.getLogger().log("Processing signin for email: " + email);
+
         if (!isValidEmail(email) || !isValidPassword(password)) {
-            return errorResponse(400, "Invalid email or password format.");
+            return errorResponse(400, "Invalid email or password format.", context);
         }
 
         try {
@@ -114,16 +123,21 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
                     .authParameters(Map.of("USERNAME", email, "PASSWORD", password))
                     .build();
             InitiateAuthResponse authResponse = cognitoClient.initiateAuth(authRequest);
+
+            context.getLogger().log("Login successful for email: " + email);
             return successResponse(Map.of(
                     "message", "Login successful",
                     "token", authResponse.authenticationResult().idToken()
-            ));
+            ), context);
         } catch (NotAuthorizedException e) {
-            return errorResponse(400, "Invalid credentials.");
+            context.getLogger().log("Signin error: Invalid credentials for email - " + email);
+            return errorResponse(400, "Invalid credentials.", context);
         } catch (UserNotFoundException e) {
-            return errorResponse(400, "User does not exist.");
+            context.getLogger().log("Signin error: User does not exist - " + email);
+            return errorResponse(400, "User does not exist.", context);
         } catch (Exception e) {
-            return errorResponse(500, "Signin error: " + e.getMessage());
+            context.getLogger().log("Signin error: " + e.getMessage());
+            return errorResponse(500, "Signin error: " + e.getMessage(), context);
         }
     }
 
@@ -135,22 +149,25 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
         return Pattern.compile(PASSWORD_REGEX).matcher(password).matches();
     }
 
-    private APIGatewayProxyResponseEvent invalidMethodResponse() {
-        return errorResponse(405, "Method Not Allowed");
+    private APIGatewayProxyResponseEvent invalidMethodResponse(Context context) {
+        context.getLogger().log("Error: Method Not Allowed");
+        return errorResponse(400, "Method Not Allowed", context);
     }
 
-    private APIGatewayProxyResponseEvent successResponse(Object data) throws Exception {
+    private APIGatewayProxyResponseEvent successResponse(Object data, Context context) throws Exception {
+        String response = objectMapper.writeValueAsString(Map.of("data", data));
+        context.getLogger().log("Response: " + response);
         return new APIGatewayProxyResponseEvent()
                 .withStatusCode(200)
                 .withHeaders(Map.of("Content-Type", "application/json"))
-                .withBody(objectMapper.writeValueAsString(Map.of("data", data)));
+                .withBody(response);
     }
 
-    private APIGatewayProxyResponseEvent errorResponse(int statusCode, String message) {
+    private APIGatewayProxyResponseEvent errorResponse(int statusCode, String message, Context context) {
+        context.getLogger().log("Error response: " + message);
         return new APIGatewayProxyResponseEvent()
                 .withStatusCode(statusCode)
                 .withHeaders(Map.of("Content-Type", "application/json"))
                 .withBody("{\"error\": \"" + message + "\"}");
-
     }
 }
