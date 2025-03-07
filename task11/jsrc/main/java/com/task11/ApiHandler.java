@@ -114,12 +114,26 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
     }
 
 
+    private void confirmSignUp(String email) {
+        try {
+            cognitoClient.adminConfirmSignUp(AdminConfirmSignUpRequest.builder()
+                    .userPoolId(System.getenv("COGNITO_ID"))
+                    .username(email)
+                    .build());
+
+            System.out.println("User confirmed successfully: " + email);
+        } catch (Exception e) {
+            System.err.println("Error confirming user " + email + ": " + e.getMessage());
+            throw new RuntimeException("Failed to confirm user: " + email, e);
+        }
+    }
+
     private APIGatewayProxyResponseEvent handleSignIn(APIGatewayProxyRequestEvent event, Context context) throws Exception {
         JsonNode body = objectMapper.readTree(event.getBody());
         String email = body.get("email").asText();
         String password = body.get("password").asText();
 
-        context.getLogger().log("Processing sign-in for email: " + email);
+        context.getLogger().log("Processing signin for email: " + email);
 
         if (!isValidEmail(email)) {
             return errorResponse(400, "Invalid email format.", context);
@@ -135,10 +149,11 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
                     .build());
 
             if (userResponse.userStatus() != UserStatusType.CONFIRMED) {
-                confirmSignUp(email, password);
+                context.getLogger().log("User is not confirmed: " + email + ". Confirming now...");
+                confirmSignUp(email);
             }
 
-            AdminInitiateAuthResponse authResponse = cognitoClient.adminInitiateAuth(AdminInitiateAuthRequest.builder()
+            AdminInitiateAuthRequest authRequest = AdminInitiateAuthRequest.builder()
                     .authFlow(AuthFlowType.ADMIN_NO_SRP_AUTH)
                     .userPoolId(System.getenv("COGNITO_ID"))
                     .clientId(System.getenv("CLIENT_ID"))
@@ -146,50 +161,32 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
                             "USERNAME", email,
                             "PASSWORD", password
                     ))
-                    .build());
+                    .build();
 
+            AdminInitiateAuthResponse authResponse = cognitoClient.adminInitiateAuth(authRequest);
+
+            if (authResponse.authenticationResult() == null) {
+                context.getLogger().log("Authentication result is null for user: " + email);
+                return errorResponse(400, "Authentication failed.", context);
+            }
+
+            context.getLogger().log("Login successful for email: " + email);
             return successResponse(Map.of(
                     "message", "Login successful",
-                    "token", authResponse.authenticationResult().accessToken()
+                    "accessToken", authResponse.authenticationResult().accessToken()
             ), context);
         } catch (NotAuthorizedException e) {
+            context.getLogger().log("Signin error: Invalid credentials for email - " + email);
             return errorResponse(400, "Invalid credentials.", context);
         } catch (UserNotFoundException e) {
+            context.getLogger().log("Signin error: User does not exist - " + email);
             return errorResponse(400, "User does not exist.", context);
         } catch (Exception e) {
+            context.getLogger().log("Signin error: " + e.getMessage());
             return errorResponse(500, "Signin error: " + e.getMessage(), context);
         }
     }
 
-
-    private AdminRespondToAuthChallengeResponse confirmSignUp(String email, String password) {
-        AdminInitiateAuthResponse authResponse = cognitoClient.adminInitiateAuth(AdminInitiateAuthRequest.builder()
-                .authFlow(AuthFlowType.ADMIN_NO_SRP_AUTH)
-                .userPoolId(System.getenv("COGNITO_ID"))
-                .clientId(System.getenv("CLIENT_ID"))
-                .authParameters(Map.of(
-                        "USERNAME", email,
-                        "PASSWORD", password
-                ))
-                .build());
-
-        if (ChallengeNameType.NEW_PASSWORD_REQUIRED.name().equals(authResponse.challengeNameAsString())) {
-            Map<String, String> challengeResponses = Map.of(
-                    "USERNAME", email,
-                    "PASSWORD", password,
-                    "NEW_PASSWORD", password
-            );
-
-            return cognitoClient.adminRespondToAuthChallenge(AdminRespondToAuthChallengeRequest.builder()
-                    .challengeName(ChallengeNameType.NEW_PASSWORD_REQUIRED)
-                    .challengeResponses(challengeResponses)
-                    .userPoolId(System.getenv("COGNITO_ID"))
-                    .clientId(System.getenv("CLIENT_ID"))
-                    .session(authResponse.session())
-                    .build());
-        }
-        return null;
-    }
 
 
     private boolean isValidEmail(String email) {
