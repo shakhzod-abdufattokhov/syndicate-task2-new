@@ -21,6 +21,9 @@ import java.util.regex.Pattern;
 import static com.syndicate.deployment.model.environment.ValueTransformer.USER_POOL_NAME_TO_CLIENT_ID;
 import static com.syndicate.deployment.model.environment.ValueTransformer.USER_POOL_NAME_TO_USER_POOL_ID;
 
+
+
+
 @LambdaHandler(
 		lambdaName = "api_handler",
 		roleName = "api_handler-role",
@@ -55,8 +58,11 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
 
 	@Override
 	public Map<String, Object> handleRequest(Map<String, Object> event, Context context) {
-		String path = (String) event.get("path");
-		String httpMethod = (String) event.get("httpMethod");
+		Map<String, Object> requestContext = (Map<String, Object>) event.get("requestContext");
+		Map<String, String> httpInfo = (Map<String, String>) requestContext.get("http");
+
+		String path = httpInfo.get("path");
+		String httpMethod = httpInfo.get("method");
 
 		try {
 			switch (path) {
@@ -65,15 +71,16 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
 				case "/signin":
 					return "POST".equalsIgnoreCase(httpMethod) ? handleSignIn(event) : invalidMethodResponse();
 				default:
-					return errorResponse(404, "Invalid path");
+					return errorResponse(404, "Invalid path" + path);
 			}
 		} catch (Exception e) {
-            try {
-                return errorResponse(500, "Server error: " + e.getMessage());
-            } catch (Exception ex) {
-                throw new RuntimeException(ex);
-            }
-        }
+			e.printStackTrace();
+			try {
+				return errorResponse(500, "Server error: " + (e.getMessage() != null ? e.getMessage() : "Unknown error path: "+path));
+			} catch (Exception ex) {
+				throw new RuntimeException(ex);
+			}
+		}
 	}
 
 	private Map<String, Object> handleSignUp(Map<String, Object> event) throws Exception {
@@ -81,7 +88,6 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
 		String email = body.get("email").asText();
 		String password = body.get("password").asText();
 
-		// Validate email and password
 		if (!isValidEmail(email)) {
 			return errorResponse(400, "Invalid email format.");
 		}
