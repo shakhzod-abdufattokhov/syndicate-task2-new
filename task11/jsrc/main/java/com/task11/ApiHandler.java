@@ -150,7 +150,7 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
 
             return successResponse(Map.of(
                     "message", "Login successful",
-                    "token", authResponse.authenticationResult().idToken()
+                    "token", authResponse.authenticationResult().accessToken()
             ), context);
         } catch (NotAuthorizedException e) {
             return errorResponse(400, "Invalid credentials.", context);
