@@ -76,7 +76,7 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
         String email = body.get("email").asText();
         String password = body.get("password").asText();
 
-        context.getLogger().log("Processing signup for email: " + email);
+        context.getLogger().log("Processing signup for email: " + email + "and password: "+password);
 
         if (!isValidEmail(email)) {
             return errorResponse(400, "Invalid email format.", context);
@@ -110,10 +110,13 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
         String email = body.get("email").asText();
         String password = body.get("password").asText();
 
-        context.getLogger().log("Processing signin for email: " + email);
+        context.getLogger().log("Processing signin for email: " + email + "and password: "+ password);
 
-        if (!isValidEmail(email) || !isValidPassword(password)) {
-            return errorResponse(400, "Invalid email or password format.", context);
+        if (!isValidEmail(email)) {
+            return errorResponse(400, "Invalid email format.", context);
+        }
+        if (!isValidPassword(password)) {
+            return errorResponse(400, "Password does not meet security requirements.", context);
         }
 
         try {
