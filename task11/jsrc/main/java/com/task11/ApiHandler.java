@@ -50,16 +50,15 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
         this.objectMapper = new ObjectMapper();
     }
 
-    @Override
     public APIGatewayProxyResponseEvent handleRequest(APIGatewayProxyRequestEvent event, Context context) {
-        String path = event.getPath();
+        String path = event.getPath().replaceFirst("^/api/", ""); // Remove '/api/' prefix
         String httpMethod = event.getHttpMethod();
 
         try {
             switch (path) {
-                case "/signup":
+                case "signup":
                     return "POST".equalsIgnoreCase(httpMethod) ? handleSignUp(event) : invalidMethodResponse();
-                case "/signin":
+                case "signin":
                     return "POST".equalsIgnoreCase(httpMethod) ? handleSignIn(event) : invalidMethodResponse();
                 default:
                     return errorResponse(404, "Invalid path: " + path);
