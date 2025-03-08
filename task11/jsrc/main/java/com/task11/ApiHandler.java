@@ -131,6 +131,7 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
             String tableName = System.getenv("table"); // Use a meaningful variable name
             context.getLogger().log("DynamoDB table name: " + tableName);
 
+
             // Convert tableId to an integer
             int tableIdInt;
             try {
@@ -202,6 +203,14 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
             String date = requestBody.get("date").toString();
             String slotTimeStart = requestBody.get("slotTimeStart").toString();
             String slotTimeEnd = requestBody.get("slotTimeEnd").toString();
+
+            if (!doesTableExist(tableNumber, context)) {
+                return errorResponse(400, "Table does not exist", context);
+            }
+
+            if (isTableAlreadyReserved(tableNumber, date, slotTimeStart, slotTimeEnd, context)) {
+                return errorResponse(400, "Table is already reserved for the selected time slot", context);
+            }
 
             // Generate UUID for reservation ID
             String reservationId = UUID.randomUUID().toString();
