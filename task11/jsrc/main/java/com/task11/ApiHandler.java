@@ -13,6 +13,7 @@ import com.syndicate.deployment.annotations.resources.DependsOn;
 import com.syndicate.deployment.model.DeploymentRuntime;
 import com.syndicate.deployment.model.ResourceType;
 import com.syndicate.deployment.model.RetentionSetting;
+import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.cognitoidentityprovider.CognitoIdentityProviderClient;
 import software.amazon.awssdk.services.cognitoidentityprovider.model.*;
@@ -21,7 +22,6 @@ import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.ScanRequest;
 import software.amazon.awssdk.services.dynamodb.model.ScanResponse;
-
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -56,12 +56,12 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
     private final CognitoIdentityProviderClient cognitoClient;
     private final DynamoDbClient dynamoDbClient;
     private final ObjectMapper objectMapper;
-    private final String tableName = System.getenv("table");
 
 
-    public ApiHandler(DynamoDbClient dynamoDbClient) {
+    public ApiHandler() {
         this.dynamoDbClient = DynamoDbClient.builder()
                 .region(Region.of(System.getenv("REGION")))
+                .credentialsProvider(DefaultCredentialsProvider.create())
                 .build();
         this.cognitoClient = CognitoIdentityProviderClient.builder()
                 .region(Region.of(System.getenv("REGION")))
@@ -82,11 +82,11 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
                 case "/signin":
                     return "POST".equalsIgnoreCase(httpMethod) ? handleSignIn(event, context) : invalidMethodResponse(context);
                 case "/tables":
-                    if ("POST".equalsIgnoreCase(httpMethod)) {
-                        return handleAddTable(event, context);
-                    } else if ("GET".equalsIgnoreCase(httpMethod)) {
-                        return handleGetTables(event, context);
-                    } else {
+                    if (httpMethod.equalsIgnoreCase("GET")) {
+                        return handleTablesGet(event, context);
+                    }else if(httpMethod.equalsIgnoreCase("POST")){
+                        return handleTablePost(event, context);
+                    }else{
                         return invalidMethodResponse(context);
                     }
                 default:
@@ -97,6 +97,146 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
             return errorResponse(500, "Server error: " + (e.getMessage() != null ? e.getMessage() : "Unknown error at path: " + path), context);
         }
     }
+
+    private APIGatewayProxyResponseEvent handleTablePost(APIGatewayProxyRequestEvent event, Context context) {
+        context.getLogger().log("Receiving request -> "+ event.getBody());
+        String token = event.getHeaders().get("Authorization");
+        context.getLogger().log("Authorization token: " + token);
+        if (token == null || !token.startsWith("Bearer ")) {
+            context.getLogger().log("Missing or invalid Authorization header: " + token);
+            return errorResponse(401, "Missing or invalid Authorization header", context);
+        }
+
+        token = token.substring(7); // Remove "Bearer " prefix
+
+        context.getLogger().log("Bearer is removed " + token);
+        if (!isTokenValid(token, context)) {
+            context.getLogger().log("Unauthorized: Invalid token: "+ token);
+            return errorResponse(401, "Unauthorized: Invalid token", context);
+        }
+
+        try {
+            context.getLogger().log("Starting request processing...");
+
+            String tableName = System.getenv("table");
+            context.getLogger().log("Table name retrieved from environment: " + tableName);
+
+            JsonNode body = objectMapper.readTree(event.getBody());
+            context.getLogger().log("Request body parsed successfully.");
+
+            int id = body.get("id").asInt();
+            int number = body.get("number").asInt();
+            int places = body.get("places").asInt();
+            boolean isVip = body.get("isVip").asBoolean();
+            int minOrder = body.has("minOrder") ? body.get("minOrder").asInt() : 0;
+
+            context.getLogger().log("Extracted values - id: " + id + ", number: " + number +
+                    ", places: " + places + ", isVip: " + isVip + ", minOrder: " + minOrder);
+
+            Map<String, AttributeValue> item = new HashMap<>();
+            item.put("id", AttributeValue.builder().n(String.valueOf(id)).build());
+            item.put("number", AttributeValue.builder().n(String.valueOf(number)).build());
+            item.put("places", AttributeValue.builder().n(String.valueOf(places)).build());
+            item.put("isVip", AttributeValue.builder().bool(isVip).build());
+            if (body.has("minOrder")) {
+                item.put("minOrder", AttributeValue.builder().n(String.valueOf(minOrder)).build());
+            }
+
+            context.getLogger().log("Item map constructed: " + item.toString());
+
+            PutItemRequest putItemRequest = PutItemRequest.builder()
+                    .tableName(tableName)
+                    .item(item)
+                    .build();
+
+            context.getLogger().log("PutItemRequest created: " + putItemRequest.toString());
+
+            dynamoDbClient.putItem(putItemRequest);
+            context.getLogger().log("Data inserted into DynamoDB successfully.");
+
+            Map<String, Object> responseBody = new HashMap<>();
+            responseBody.put("id", id);
+
+            String responseString = objectMapper.writeValueAsString(responseBody);
+            context.getLogger().log("Response created: " + responseString);
+
+            return successResponse(responseString, context);
+        } catch (Exception e) {
+            context.getLogger().log("Error saving table: " + e.getMessage());
+            return errorResponse(500, "Error saving table.", context);
+        }
+
+    }
+
+
+    private APIGatewayProxyResponseEvent handleTablesGet(APIGatewayProxyRequestEvent event, Context context) {
+
+
+        context.getLogger().log("Receiving request -> "+ event.getBody());
+        String token = event.getHeaders().get("Authorization");
+        context.getLogger().log("Authorization token: " + token);
+        if (token == null || !token.startsWith("Bearer ")) {
+            context.getLogger().log("Missing or invalid Authorization header: " + token);
+            return errorResponse(401, "Missing or invalid Authorization header", context);
+        }
+
+        token = token.substring(7); // Remove "Bearer " prefix
+
+        context.getLogger().log("Bearer is removed " + token);
+        if (!isTokenValid(token, context)) {
+            context.getLogger().log("Unauthorized: Invalid token: "+ token);
+            return errorResponse(401, "Unauthorized: Invalid token", context);
+        }
+        try {
+            context.getLogger().log("Starting table scan request...");
+
+            String tableName = System.getenv("table");
+            context.getLogger().log("Table name retrieved from environment: " + tableName);
+
+            ScanRequest scanRequest = ScanRequest.builder()
+                    .tableName(tableName)
+                    .build();
+
+            context.getLogger().log("ScanRequest created: " + scanRequest.toString());
+
+            ScanResponse scanResponse = dynamoDbClient.scan(scanRequest);
+            context.getLogger().log("ScanResponse received. Item count: " + scanResponse.count());
+
+            List<Map<String, AttributeValue>> items = scanResponse.items();
+            List<Map<String, Object>> tables = new ArrayList<>();
+
+            context.getLogger().log("Processing retrieved items...");
+
+            for (Map<String, AttributeValue> item : items) {
+                Map<String, Object> table = new HashMap<>();
+                table.put("id", Integer.parseInt(item.get("id").n()));
+                table.put("number", Integer.parseInt(item.get("number").n()));
+                table.put("places", Integer.parseInt(item.get("places").n()));
+                table.put("isVip", Boolean.parseBoolean(item.get("isVip").bool().toString()));
+
+                if (item.containsKey("minOrder")) {
+                    table.put("minOrder", Integer.parseInt(item.get("minOrder").n()));
+                }
+
+                tables.add(table);
+                context.getLogger().log("Processed item: " + table.toString());
+            }
+
+            Map<String, Object> responseBody = new HashMap<>();
+            responseBody.put("tables", tables);
+
+            String responseString = objectMapper.writeValueAsString(responseBody);
+            context.getLogger().log("Response created: " + responseString);
+
+            return successResponse(responseString, context);
+        } catch (Exception e) {
+            context.getLogger().log("Error fetching tables: " + e.getMessage());
+            return errorResponse(500, "Error fetching tables.", context);
+        }
+
+    }
+
+
 
     private APIGatewayProxyResponseEvent handleSignUp(APIGatewayProxyRequestEvent event, Context context) throws Exception {
         JsonNode body = objectMapper.readTree(event.getBody());
@@ -215,119 +355,18 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
         }
     }
 
-    private APIGatewayProxyResponseEvent handleAddTable(APIGatewayProxyRequestEvent event, Context context) throws Exception {
-        context.getLogger().log("Processing add table request...\n");
-
-        // Extract Authorization header
-        Map<String, String> headers = event.getHeaders();
-        if (headers == null || !headers.containsKey("Authorization")) {
-            context.getLogger().log("Missing Authorization header\n");
-            return errorResponse(401, "Missing Authorization header", context);
-        }
-        String accessToken = headers.get("Authorization").replace("Bearer ", "");
-
-        // Verify access token with Cognito
+    private boolean isTokenValid(String token, Context context) {
         try {
-            cognitoClient.getUser(GetUserRequest.builder()
-                    .accessToken(accessToken)
-                    .build());
-            context.getLogger().log("Authorization verified successfully.\n");
-        } catch (Exception e) {
-            context.getLogger().log("Unauthorized request: " + e.getMessage() + "\n");
-            return errorResponse(401, "Unauthorized", context);
-        }
-
-        // Parse request body
-        JsonNode body = objectMapper.readTree(event.getBody());
-        if (!body.has("tableName")) {
-            context.getLogger().log("Invalid request: Missing tableName field\n");
-            return errorResponse(400, "Missing tableName field", context);
-        }
-
-        String tableName = body.get("tableName").asText();
-        Integer tableDeposit = body.has("tableDeposit") ? body.get("tableDeposit").asInt() : null;
-
-        long tableId = System.currentTimeMillis(); // Unique ID based on timestamp
-
-        // Insert into DynamoDB
-        try {
-            Map<String, AttributeValue> item = new HashMap<>();
-            item.put("id", AttributeValue.builder().n(String.valueOf(tableId)).build());
-            item.put("tableName", AttributeValue.builder().s(tableName).build());
-
-            if (tableDeposit != null) {
-                item.put("tableDeposit", AttributeValue.builder().n(String.valueOf(tableDeposit)).build());
-            }
-
-            dynamoDbClient.putItem(PutItemRequest.builder()
-                    .tableName(tableName) // Change to your actual DynamoDB table name
-                    .item(item)
-                    .build());
-
-            context.getLogger().log("Table added successfully: ID=" + tableId + ", Name=" + tableName + "\n");
-
-            return successResponse(Map.of("id", tableId), context);
-        } catch (Exception e) {
-            context.getLogger().log("Error adding table: " + e.getMessage() + "\n");
-            return errorResponse(500, "Error adding table: " + e.getMessage(), context);
-        }
-    }
-
-    private APIGatewayProxyResponseEvent handleGetTables(APIGatewayProxyRequestEvent event, Context context) {
-        context.getLogger().log("Processing get tables request...\n");
-
-        // Extract Authorization header
-        Map<String, String> headers = event.getHeaders();
-        if (headers == null || !headers.containsKey("Authorization")) {
-            context.getLogger().log("Missing Authorization header\n");
-            return errorResponse(401, "Missing Authorization header", context);
-        }
-        String accessToken = headers.get("Authorization").replace("Bearer ", "");
-
-        // Verify access token with Cognito
-        try {
-            cognitoClient.getUser(GetUserRequest.builder()
-                    .accessToken(accessToken)
-                    .build());
-            context.getLogger().log("Authorization verified successfully.\n");
-        } catch (Exception e) {
-            context.getLogger().log("Unauthorized request: " + e.getMessage() + "\n");
-            return errorResponse(401, "Unauthorized", context);
-        }
-
-        // Fetch tables from DynamoDB
-        try {
-            ScanRequest scanRequest = ScanRequest.builder()
-                    .tableName(tableName) // Change to your actual table name
+            GetUserRequest request = GetUserRequest.builder()
+                    .accessToken(token)
                     .build();
-            ScanResponse scanResponse = dynamoDbClient.scan(scanRequest);
-
-            List<Map<String, Object>> tables = new ArrayList<>();
-
-            for (Map<String, AttributeValue> item : scanResponse.items()) {
-                Map<String, Object> table = new HashMap<>();
-                table.put("id", Long.parseLong(item.get("id").n()));
-                table.put("tableName", item.get("tableName").s());
-
-                if (item.containsKey("tableDeposit")) {
-                    table.put("tableDeposit", Integer.parseInt(item.get("tableDeposit").n()));
-                }
-
-                tables.add(table);
-            }
-
-            context.getLogger().log("Retrieved " + tables.size() + " tables successfully.\n");
-
-            return successResponse(tables, context);
-        } catch (Exception e) {
-            context.getLogger().log("Error fetching tables: " + e.getMessage() + "\n");
-            return errorResponse(500, "Error fetching tables: " + e.getMessage(), context);
+            cognitoClient.getUser(request);
+            return true;
+        } catch (NotAuthorizedException | InvalidParameterException e) {
+            context.getLogger().log("Invalid Token: " + e.getMessage());
+            return false;
         }
     }
-
-
-
-
 
 
     private boolean isValidEmail(String email) {

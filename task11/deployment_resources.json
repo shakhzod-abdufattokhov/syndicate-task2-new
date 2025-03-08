@@ -107,7 +107,7 @@
         "enable_cors": true,
         "GET": {
           "enable_proxy": true,
-          "authorization_type": "authorizer",
+          "authorization_type": "NONE",
           "integration_type": "lambda",
           "lambda_name": "api_handler",
           "api_key_required": false,
@@ -119,7 +119,7 @@
         },
         "POST": {
           "enable_proxy": true,
-          "authorization_type": "authorizer",
+          "authorization_type": "NONE",
           "integration_type": "lambda",
           "lambda_name": "api_handler",
           "api_key_required": false,
