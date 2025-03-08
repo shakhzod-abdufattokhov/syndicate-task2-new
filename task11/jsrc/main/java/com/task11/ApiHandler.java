@@ -47,6 +47,7 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
 
     private static final String EMAIL_REGEX = "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$";
     private static final String PASSWORD_REGEX = "^(?=.*[A-Z])(?=.*[a-z])(?=.*\\d)(?=.*[@#$%^&+=!\\-_]).{12,}$";
+    private static List<String> tablesIds = new ArrayList<>();
 
     private final CognitoIdentityProviderClient cognitoClient;
     private final DynamoDbClient dynamoDbClient;
@@ -237,6 +238,7 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
             Map<String, String> responseBody = new HashMap<>();
             responseBody.put("reservationId", reservationId);
 
+            tablesIds.add(tableNumber);
             return new APIGatewayProxyResponseEvent()
                     .withStatusCode(200)
                     .withBody(objectMapper.writeValueAsString(responseBody))
@@ -616,29 +618,12 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
     private boolean doesTableExist(String tableNumber, Context context) {
         context.getLogger().log("Checking if a table with tableNumber " + tableNumber + " exists.");
 
-        String tableName = System.getenv("table"); // Ensure the correct table name is set
-        if (tableName == null || tableName.isEmpty()) {
-            context.getLogger().log("Error: TABLE_NAME environment variable is not set.");
-            return false;
+        for(String number: tablesIds){
+            if(number.equals(tableNumber)){
+                return true;
+            }
         }
-
-        try {
-            ScanRequest scanRequest = ScanRequest.builder()
-                    .tableName(tableName)
-                    .filterExpression("tableNumber = :tableNum")
-                    .expressionAttributeValues(Map.of(":tableNum", AttributeValue.builder().s(tableNumber).build()))
-                    .limit(1) // We only need to check if one exists
-                    .build();
-
-            ScanResponse scanResponse = dynamoDbClient.scan(scanRequest);
-            boolean exists = !scanResponse.items().isEmpty();
-
-            context.getLogger().log("Table existence check result: " + exists);
-            return exists;
-        } catch (Exception e) {
-            context.getLogger().log("Error while checking table existence: " + e.getMessage());
-            return false;
-        }
+        return false;
     }
 
 
