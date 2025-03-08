@@ -134,7 +134,7 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
                     ", places: " + places + ", isVip: " + isVip + ", minOrder: " + minOrder);
 
             Map<String, AttributeValue> item = new HashMap<>();
-            item.put("id", AttributeValue.builder().n(String.valueOf(id)).build());
+            item.put("id", AttributeValue.builder().s(String.valueOf(id)).build());
             item.put("number", AttributeValue.builder().n(String.valueOf(number)).build());
             item.put("places", AttributeValue.builder().n(String.valueOf(places)).build());
             item.put("isVip", AttributeValue.builder().bool(isVip).build());
@@ -170,7 +170,6 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
 
 
     private APIGatewayProxyResponseEvent handleTablesGet(APIGatewayProxyRequestEvent event, Context context) {
-
 
         context.getLogger().log("Receiving request -> "+ event.getBody());
         String token = event.getHeaders().get("Authorization");
@@ -209,7 +208,7 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
 
             for (Map<String, AttributeValue> item : items) {
                 Map<String, Object> table = new HashMap<>();
-                table.put("id", Integer.parseInt(item.get("id").n()));
+                table.put("id", Integer.parseInt(item.get("id").s()));
                 table.put("number", Integer.parseInt(item.get("number").n()));
                 table.put("places", Integer.parseInt(item.get("places").n()));
                 table.put("isVip", Boolean.parseBoolean(item.get("isVip").bool().toString()));
