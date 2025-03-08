@@ -112,6 +112,7 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
     private APIGatewayProxyResponseEvent handleTableGetById(APIGatewayProxyRequestEvent event, Context context, String tableId) {
         context.getLogger().log("Fetching table with ID: " + tableId);
 
+        // Validate Authorization Token
         String token = event.getHeaders().get("Authorization");
         if (token == null || !token.startsWith("Bearer ")) {
             context.getLogger().log("Missing or invalid Authorization header.");
@@ -129,7 +130,7 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
             context.getLogger().log("DynamoDB table name: " + tableName);
 
             Map<String, AttributeValue> key = new HashMap<>();
-            key.put("id", AttributeValue.builder().s(tableId).build());
+            key.put("id", AttributeValue.builder().n(tableId).build()); // Fix: ID should be stored as a number
 
             GetItemRequest getItemRequest = GetItemRequest.builder()
                     .tableName(tableName)
@@ -145,9 +146,9 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
 
             Map<String, AttributeValue> item = response.item();
 
-            // Construct the response JSON
+            // Construct the response JSON in the expected format
             Map<String, Object> responseBody = new HashMap<>();
-            responseBody.put("id", item.get("id").s());
+            responseBody.put("id", Integer.parseInt(item.get("id").n())); // Convert ID to integer
             responseBody.put("number", Integer.parseInt(item.get("number").n()));
             responseBody.put("places", Integer.parseInt(item.get("places").n()));
             responseBody.put("isVip", item.get("isVip").bool());
@@ -166,6 +167,7 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
             return errorResponse(500, "Server error: " + e.getMessage(), context);
         }
     }
+
 
 
     private APIGatewayProxyResponseEvent handleReservationsPost(APIGatewayProxyRequestEvent event, Context context) {
@@ -202,7 +204,7 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
             }
 
             String reservationId = UUID.randomUUID().toString();
-            String tableName = System.getenv("reservations_table");
+            String tableName = System.getenv("reservation");
 
             Map<String, AttributeValue> reservation = new HashMap<>();
             reservation.put("reservationId", AttributeValue.builder().s(reservationId).build());
