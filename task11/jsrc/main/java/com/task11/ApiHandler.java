@@ -614,19 +614,26 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
     }
 
     private boolean doesTableExist(String tableNumber, Context context) {
-        context.getLogger().log("Reservation Post, Checking whether table exist or not with tableNumber: "+tableNumber);
-        String tableName = System.getenv("table");
-        Map<String, AttributeValue> key = new HashMap<>();
-        key.put("tableNumber", AttributeValue.builder().s(tableNumber).build());
+        context.getLogger().log("Checking whether table exists with tableNumber: " + tableNumber);
 
-        GetItemRequest getItemRequest = GetItemRequest.builder()
-                .tableName(tableName)
-                .key(key)
-                .build();
+        String tableName = System.getenv("TABLE_NAME");
 
-        GetItemResponse getItemResponse = dynamoDbClient.getItem(getItemRequest);
-        return getItemResponse.hasItem();
+        try {
+            ScanRequest scanRequest = ScanRequest.builder()
+                    .tableName(tableName)
+                    .filterExpression("tableNumber = :tableNum")
+                    .expressionAttributeValues(Map.of(":tableNum", AttributeValue.builder().s(tableNumber).build()))
+                    .limit(1) // Only need to check if one exists
+                    .build();
+
+            ScanResponse scanResponse = dynamoDbClient.scan(scanRequest);
+            return !scanResponse.items().isEmpty();
+        } catch (Exception e) {
+            context.getLogger().log("Error checking table existence: " + e.getMessage());
+            return false;
+        }
     }
+
 
 
 
