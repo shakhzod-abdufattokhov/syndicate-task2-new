@@ -140,7 +140,7 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
 
             // Prepare the key for the query
             Map<String, AttributeValue> key = new HashMap<>();
-            key.put("id", AttributeValue.builder().n(String.valueOf(tableIdInt)).build()); // Store & retrieve as Number (N)
+            key.put("id", AttributeValue.builder().s(tableId).build());
 
             // Fetch item from DynamoDB
             GetItemRequest getItemRequest = GetItemRequest.builder()
@@ -615,7 +615,7 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
 
     private boolean doesTableExist(String tableNumber, Context context) {
         context.getLogger().log("Reservation Post, Checking whether table exist or not with tableNumber: "+tableNumber);
-        String tableName = System.getenv("tables_table");
+        String tableName = System.getenv("table");
         GetItemRequest getItemRequest = GetItemRequest.builder()
                 .tableName(tableName)
                 .key(Map.of("tableNumber", AttributeValue.builder().n(tableNumber).build()))
