@@ -147,8 +147,8 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
 
             // Construct the response JSON
             Map<String, Object> responseBody = new HashMap<>();
-            responseBody.put("id", item.get("number").s());
-            responseBody.put("number", Integer.parseInt(item.get("id").n()));
+            responseBody.put("id", item.get("id").s());
+            responseBody.put("number", Integer.parseInt(item.get("number").n()));
             responseBody.put("places", Integer.parseInt(item.get("places").n()));
             responseBody.put("isVip", item.get("isVip").bool());
             responseBody.put("minOrder", item.containsKey("minOrder") ? Integer.parseInt(item.get("minOrder").n()) : 0);
@@ -191,14 +191,21 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
             String slotTimeStart = requestBody.get("slotTimeStart").toString();
             String slotTimeEnd = requestBody.get("slotTimeEnd").toString();
 
-            // Generate UUID for reservation ID
-            String reservationId = UUID.randomUUID().toString();
-            String tableName = System.getenv("reservation");  // Ensure this env variable is correct
+            // Check if the table exists
+            if (!doesTableExist(tableNumber, context)) {
+                return errorResponse(400, "Table does not exist", context);
+            }
 
-            // Ensure primary key matches table schema
+            // Check for conflicts in reservations
+            if (isTableAlreadyReserved(tableNumber, date, slotTimeStart, slotTimeEnd, context)) {
+                return errorResponse(400, "Table is already reserved for the selected time slot", context);
+            }
+
+            String reservationId = UUID.randomUUID().toString();
+            String tableName = System.getenv("reservations_table");
+
             Map<String, AttributeValue> reservation = new HashMap<>();
-            reservation.put("id", AttributeValue.builder().s(reservationId).build());  // Ensure key matches DB schema
-            reservation.put("reservationId", AttributeValue.builder().s(reservationId).build()); // Optional
+            reservation.put("reservationId", AttributeValue.builder().s(reservationId).build());
             reservation.put("tableNumber", AttributeValue.builder().n(tableNumber).build());
             reservation.put("clientName", AttributeValue.builder().s(clientName).build());
             reservation.put("phoneNumber", AttributeValue.builder().s(phoneNumber).build());
@@ -206,7 +213,6 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
             reservation.put("slotTimeStart", AttributeValue.builder().s(slotTimeStart).build());
             reservation.put("slotTimeEnd", AttributeValue.builder().s(slotTimeEnd).build());
 
-            // Put item into DynamoDB
             PutItemRequest putItemRequest = PutItemRequest.builder()
                     .tableName(tableName)
                     .item(reservation)
@@ -214,7 +220,6 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
 
             dynamoDbClient.putItem(putItemRequest);
 
-            // Response
             Map<String, String> responseBody = new HashMap<>();
             responseBody.put("reservationId", reservationId);
 
@@ -222,12 +227,21 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
                     .withStatusCode(200)
                     .withBody(objectMapper.writeValueAsString(responseBody))
                     .withHeaders(Map.of("Content-Type", "application/json"));
-
         } catch (Exception e) {
             return errorResponse(500, "Server error: " + e.getMessage(), context);
         }
     }
 
+    private boolean doesTableExist(String tableNumber, Context context) {
+        String tableName = System.getenv("tables_table");
+        GetItemRequest getItemRequest = GetItemRequest.builder()
+                .tableName(tableName)
+                .key(Map.of("tableNumber", AttributeValue.builder().n(tableNumber).build()))
+                .build();
+
+        GetItemResponse getItemResponse = dynamoDbClient.getItem(getItemRequest);
+        return getItemResponse.hasItem();
+    }
 
     private APIGatewayProxyResponseEvent handleReservationsGet(APIGatewayProxyRequestEvent event, Context context) {
         context.getLogger().log("Fetching all reservations...");
@@ -570,6 +584,29 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
                 .withHeaders(Map.of("Content-Type", "application/json"))
                 .withBody("{\"error\": \"" + message + "\"}");
     }
+
+    private boolean isTableAlreadyReserved(String tableNumber, String date, String slotTimeStart, String slotTimeEnd, Context context) {
+        String tableName = System.getenv("reservation");
+
+        Map<String, AttributeValue> expressionValues = new HashMap<>();
+        expressionValues.put(":tableNumber", AttributeValue.builder().n(tableNumber).build());
+        expressionValues.put(":date", AttributeValue.builder().s(date).build());
+        expressionValues.put(":slotStart", AttributeValue.builder().s(slotTimeStart).build());
+        expressionValues.put(":slotEnd", AttributeValue.builder().s(slotTimeEnd).build());
+
+        String filterExpression = "tableNumber = :tableNumber AND date = :date AND " +
+                "(slotTimeStart < :slotEnd AND slotTimeEnd > :slotStart)";
+
+        ScanRequest scanRequest = ScanRequest.builder()
+                .tableName(tableName)
+                .filterExpression(filterExpression)
+                .expressionAttributeValues(expressionValues)
+                .build();
+
+        ScanResponse scanResponse = dynamoDbClient.scan(scanRequest);
+        return !scanResponse.items().isEmpty();
+    }
+
 
 
 }
