@@ -662,8 +662,11 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
     }
 
     private boolean isTableAlreadyReserved(String tableNumber, String date, String slotTimeStart, String slotTimeEnd, Context context) {
-        context.getLogger().log("Reservation Post: isTableAlreadyReserved method with table Number: "+tableNumber);
+        context.getLogger().log("Reservation Post: isTableAlreadyReserved method with table Number: " + tableNumber);
         String tableName = System.getenv("reservation");
+
+        Map<String, String> expressionAttributeNames = new HashMap<>();
+        expressionAttributeNames.put("#date", "date"); // Escaping the reserved keyword
 
         Map<String, AttributeValue> expressionValues = new HashMap<>();
         expressionValues.put(":tableNumber", AttributeValue.builder().n(tableNumber).build());
@@ -671,18 +674,20 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
         expressionValues.put(":slotStart", AttributeValue.builder().s(slotTimeStart).build());
         expressionValues.put(":slotEnd", AttributeValue.builder().s(slotTimeEnd).build());
 
-        String filterExpression = "tableNumber = :tableNumber AND date = :date AND " +
+        String filterExpression = "tableNumber = :tableNumber AND #date = :date AND " +
                 "(slotTimeStart < :slotEnd AND slotTimeEnd > :slotStart)";
 
         ScanRequest scanRequest = ScanRequest.builder()
                 .tableName(tableName)
                 .filterExpression(filterExpression)
+                .expressionAttributeNames(expressionAttributeNames) // Use escaped attribute name
                 .expressionAttributeValues(expressionValues)
                 .build();
 
         ScanResponse scanResponse = dynamoDbClient.scan(scanRequest);
         return !scanResponse.items().isEmpty();
     }
+
 
     private boolean doesTableExist(String tableNumber, Context context) {
         context.getLogger().log("Checking if a table with tableNumber " + tableNumber + " exists. Table ids: "+ tablesIds.toString() );
