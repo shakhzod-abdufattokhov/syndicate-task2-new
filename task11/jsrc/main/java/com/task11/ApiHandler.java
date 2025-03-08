@@ -382,12 +382,11 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
     }
 
     private APIGatewayProxyResponseEvent successResponse(Object data, Context context) throws Exception {
-        String response = objectMapper.writeValueAsString(Map.of("data", data));
-        context.getLogger().log("Response: " + response);
+        context.getLogger().log("Response: " + data);
         return new APIGatewayProxyResponseEvent()
                 .withStatusCode(200)
                 .withHeaders(Map.of("Content-Type", "application/json"))
-                .withBody(response);
+                .withBody((String) data);
     }
 
     private APIGatewayProxyResponseEvent errorResponse(int statusCode, String message, Context context) {
