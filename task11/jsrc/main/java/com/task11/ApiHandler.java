@@ -183,7 +183,7 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
 
 
     private APIGatewayProxyResponseEvent handleReservationsPost(APIGatewayProxyRequestEvent event, Context context) {
-        context.getLogger().log("Processing new reservation request...");
+        context.getLogger().log("Processing new reservation request..." + event);
 
         // Validate Authorization Token
         String token = event.getHeaders().get("Authorization");
@@ -201,7 +201,7 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
             String tableNumber = requestBody.get("tableNumber").toString();
             String clientName = requestBody.get("clientName").toString();
             String phoneNumber = requestBody.get("phoneNumber").toString();
-            String date = requestBody.get("date").toString();
+            String reservationDate = requestBody.get("date").toString(); // Renamed to avoid direct use
             String slotTimeStart = requestBody.get("slotTimeStart").toString();
             String slotTimeEnd = requestBody.get("slotTimeEnd").toString();
 
@@ -211,7 +211,7 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
             }
 
             // Check for conflicts in reservations
-            if (isTableAlreadyReserved(tableNumber, date, slotTimeStart, slotTimeEnd, context)) {
+            if (isTableAlreadyReserved(tableNumber, reservationDate, slotTimeStart, slotTimeEnd, context)) {
                 return errorResponse(400, "Table is already reserved for the selected time slot", context);
             }
 
@@ -224,13 +224,16 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
             reservation.put("tableNumber", AttributeValue.builder().n(tableNumber).build());
             reservation.put("clientName", AttributeValue.builder().s(clientName).build());
             reservation.put("phoneNumber", AttributeValue.builder().s(phoneNumber).build());
-            reservation.put("date", AttributeValue.builder().s(date).build());
+            reservation.put("#reservationDate", AttributeValue.builder().s(reservationDate).build()); // Aliased
+
             reservation.put("slotTimeStart", AttributeValue.builder().s(slotTimeStart).build());
             reservation.put("slotTimeEnd", AttributeValue.builder().s(slotTimeEnd).build());
 
+            context.getLogger().log("Reservation : "+ reservationDate);
             PutItemRequest putItemRequest = PutItemRequest.builder()
                     .tableName(tableName)
                     .item(reservation)
+                    .expressionAttributeNames(Map.of("#reservationDate", "date")) // Alias "date" to avoid conflict
                     .build();
 
             dynamoDbClient.putItem(putItemRequest);
@@ -246,6 +249,7 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
             return errorResponse(500, "Server error: " + e.getMessage(), context);
         }
     }
+
 
 
 
@@ -274,7 +278,7 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
                 reservation.put("tableNumber", Integer.parseInt(item.get("tableNumber").n()));
                 reservation.put("clientName", item.get("clientName").s());
                 reservation.put("phoneNumber", item.get("phoneNumber").s());
-                reservation.put("date", item.get("date").s());
+                reservation.put("date", item.get("#reservationDate").s());
                 reservation.put("slotTimeStart", item.get("slotTimeStart").s());
                 reservation.put("slotTimeEnd", item.get("slotTimeEnd").s());
                 reservations.add(reservation);
