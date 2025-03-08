@@ -616,23 +616,34 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
     private boolean doesTableExist(String tableNumber, Context context) {
         context.getLogger().log("Checking whether table exists with tableNumber: " + tableNumber);
 
-        String tableName = System.getenv("table");
+        String tableName = System.getenv("table"); // Use a clear variable name
 
         try {
-            ScanRequest scanRequest = ScanRequest.builder()
+            // Convert tableNumber to Integer (if stored as Number in DynamoDB)
+            int tableNumberInt;
+            try {
+                tableNumberInt = Integer.parseInt(tableNumber);
+            } catch (NumberFormatException e) {
+                context.getLogger().log("Invalid tableNumber format: " + tableNumber);
+                return false; // Invalid tableNumber, assume it doesn't exist
+            }
+
+            Map<String, AttributeValue> key = new HashMap<>();
+            key.put("tableNumber", AttributeValue.builder().n(String.valueOf(tableNumberInt)).build()); // Use 'n()' for Numbers
+
+            GetItemRequest getItemRequest = GetItemRequest.builder()
                     .tableName(tableName)
-                    .filterExpression("tableNumber = :tableNum")
-                    .expressionAttributeValues(Map.of(":tableNum", AttributeValue.builder().s(tableNumber).build()))
-                    .limit(1) // Only need to check if one exists
+                    .key(key)
                     .build();
 
-            ScanResponse scanResponse = dynamoDbClient.scan(scanRequest);
-            return !scanResponse.items().isEmpty();
+            GetItemResponse getItemResponse = dynamoDbClient.getItem(getItemRequest);
+            return getItemResponse.hasItem();
         } catch (Exception e) {
             context.getLogger().log("Error checking table existence: " + e.getMessage());
             return false;
         }
     }
+
 
 
 
