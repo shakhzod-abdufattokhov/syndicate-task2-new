@@ -614,35 +614,33 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
     }
 
     private boolean doesTableExist(String tableNumber, Context context) {
-        context.getLogger().log("Checking whether table exists with tableNumber: " + tableNumber);
+        context.getLogger().log("Checking if a table with tableNumber " + tableNumber + " exists.");
 
-        String tableName = System.getenv("table"); // Use a clear variable name
+        String tableName = System.getenv("table"); // Ensure the correct table name is set
+        if (tableName == null || tableName.isEmpty()) {
+            context.getLogger().log("Error: TABLE_NAME environment variable is not set.");
+            return false;
+        }
 
         try {
-            // Convert tableNumber to Integer (if stored as Number in DynamoDB)
-            int tableNumberInt;
-            try {
-                tableNumberInt = Integer.parseInt(tableNumber);
-            } catch (NumberFormatException e) {
-                context.getLogger().log("Invalid tableNumber format: " + tableNumber);
-                return false; // Invalid tableNumber, assume it doesn't exist
-            }
-
-            Map<String, AttributeValue> key = new HashMap<>();
-            key.put("tableNumber", AttributeValue.builder().n(String.valueOf(tableNumberInt)).build()); // Use 'n()' for Numbers
-
-            GetItemRequest getItemRequest = GetItemRequest.builder()
+            ScanRequest scanRequest = ScanRequest.builder()
                     .tableName(tableName)
-                    .key(key)
+                    .filterExpression("tableNumber = :tableNum")
+                    .expressionAttributeValues(Map.of(":tableNum", AttributeValue.builder().s(tableNumber).build()))
+                    .limit(1) // We only need to check if one exists
                     .build();
 
-            GetItemResponse getItemResponse = dynamoDbClient.getItem(getItemRequest);
-            return getItemResponse.hasItem();
+            ScanResponse scanResponse = dynamoDbClient.scan(scanRequest);
+            boolean exists = !scanResponse.items().isEmpty();
+
+            context.getLogger().log("Table existence check result: " + exists);
+            return exists;
         } catch (Exception e) {
-            context.getLogger().log("Error checking table existence: " + e.getMessage());
+            context.getLogger().log("Error while checking table existence: " + e.getMessage());
             return false;
         }
     }
+
 
 
 
