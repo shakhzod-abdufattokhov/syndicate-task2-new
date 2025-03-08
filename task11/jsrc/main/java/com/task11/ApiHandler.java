@@ -112,6 +112,7 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
     private APIGatewayProxyResponseEvent handleTableGetById(APIGatewayProxyRequestEvent event, Context context, String tableId) {
         context.getLogger().log("Fetching table with ID: " + tableId);
 
+        // Validate Authorization Token
         String token = event.getHeaders().get("Authorization");
         if (token == null || !token.startsWith("Bearer ")) {
             context.getLogger().log("Missing or invalid Authorization header.");
@@ -125,12 +126,23 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
         }
 
         try {
-            String tableName = System.getenv("table");
+            // Get the table name from environment variables
+            String tableName = System.getenv("table"); // Use a meaningful variable name
             context.getLogger().log("DynamoDB table name: " + tableName);
 
-            Map<String, AttributeValue> key = new HashMap<>();
-            key.put("id", AttributeValue.builder().s(tableId).build());
+            // Convert tableId to an integer
+            int tableIdInt;
+            try {
+                tableIdInt = Integer.parseInt(tableId);
+            } catch (NumberFormatException e) {
+                return errorResponse(400, "Invalid table ID: Must be an integer", context);
+            }
 
+            // Prepare the key for the query
+            Map<String, AttributeValue> key = new HashMap<>();
+            key.put("id", AttributeValue.builder().n(String.valueOf(tableIdInt)).build()); // Store & retrieve as Number (N)
+
+            // Fetch item from DynamoDB
             GetItemRequest getItemRequest = GetItemRequest.builder()
                     .tableName(tableName)
                     .key(key)
@@ -147,7 +159,7 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
 
             // Construct the response JSON
             Map<String, Object> responseBody = new LinkedHashMap<>();
-            responseBody.put("id", item.get("id").n());
+            responseBody.put("id", tableIdInt); // Ensure ID is returned as an integer
             responseBody.put("number", Integer.parseInt(item.get("number").n()));
             responseBody.put("places", Integer.parseInt(item.get("places").n()));
             responseBody.put("isVip", item.get("isVip").bool());
@@ -168,6 +180,7 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
     }
 
 
+
     private APIGatewayProxyResponseEvent handleReservationsPost(APIGatewayProxyRequestEvent event, Context context) {
         context.getLogger().log("Processing new reservation request...");
 
@@ -184,50 +197,36 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
 
         try {
             Map<String, Object> requestBody = objectMapper.readValue(event.getBody(), new TypeReference<>() {});
-
-            // Extract and validate required fields
-            Integer tableNumber = (Integer) requestBody.get("tableNumber"); // Expecting an integer
-            String clientName = (String) requestBody.get("clientName");
-            String phoneNumber = (String) requestBody.get("phoneNumber");
-            String date = (String) requestBody.get("date");
-            String slotTimeStart = (String) requestBody.get("slotTimeStart");
-            String slotTimeEnd = (String) requestBody.get("slotTimeEnd");
-
-            if (tableNumber == null || clientName == null || phoneNumber == null || date == null ||
-                    slotTimeStart == null || slotTimeEnd == null) {
-                return errorResponse(400, "Invalid input: Missing required fields", context);
-            }
+            String tableNumber = requestBody.get("tableNumber").toString();
+            String clientName = requestBody.get("clientName").toString();
+            String phoneNumber = requestBody.get("phoneNumber").toString();
+            String date = requestBody.get("date").toString();
+            String slotTimeStart = requestBody.get("slotTimeStart").toString();
+            String slotTimeEnd = requestBody.get("slotTimeEnd").toString();
 
             // Check if the table exists
-            if (!doesTableExist(tableNumber.toString(), context)) {
+            if (!doesTableExist(tableNumber, context)) {
                 return errorResponse(400, "Table does not exist", context);
             }
 
-            // Check for reservation conflicts
-            if (isTableAlreadyReserved(tableNumber.toString(), date, slotTimeStart, slotTimeEnd, context)) {
+            // Check for conflicts in reservations
+            if (isTableAlreadyReserved(tableNumber, date, slotTimeStart, slotTimeEnd, context)) {
                 return errorResponse(400, "Table is already reserved for the selected time slot", context);
             }
 
-            // Generate reservation ID
             String reservationId = UUID.randomUUID().toString();
+            String tableName = System.getenv("reservation");
 
-            // Retrieve correct table name
-            String tableName = System.getenv("reservation");  // Use correct env variable key
-            if (tableName == null || tableName.isEmpty()) {
-                return errorResponse(500, "Server configuration error: Table name is missing", context);
-            }
-
-            // Prepare reservation item
             Map<String, AttributeValue> reservation = new HashMap<>();
+            reservation.put("id", AttributeValue.builder().s(reservationId).build());
             reservation.put("reservationId", AttributeValue.builder().s(reservationId).build());
-            reservation.put("tableNumber", AttributeValue.builder().n(tableNumber.toString()).build()); // Store as Number
+            reservation.put("tableNumber", AttributeValue.builder().n(tableNumber).build());
             reservation.put("clientName", AttributeValue.builder().s(clientName).build());
             reservation.put("phoneNumber", AttributeValue.builder().s(phoneNumber).build());
             reservation.put("date", AttributeValue.builder().s(date).build());
             reservation.put("slotTimeStart", AttributeValue.builder().s(slotTimeStart).build());
             reservation.put("slotTimeEnd", AttributeValue.builder().s(slotTimeEnd).build());
 
-            // Store in DynamoDB
             PutItemRequest putItemRequest = PutItemRequest.builder()
                     .tableName(tableName)
                     .item(reservation)
@@ -235,7 +234,6 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
 
             dynamoDbClient.putItem(putItemRequest);
 
-            // Response
             Map<String, String> responseBody = new HashMap<>();
             responseBody.put("reservationId", reservationId);
 
@@ -243,24 +241,12 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
                     .withStatusCode(200)
                     .withBody(objectMapper.writeValueAsString(responseBody))
                     .withHeaders(Map.of("Content-Type", "application/json"));
-
         } catch (Exception e) {
             return errorResponse(500, "Server error: " + e.getMessage(), context);
         }
     }
 
 
-
-    private boolean doesTableExist(String tableNumber, Context context) {
-        String tableName = System.getenv("tables_table");
-        GetItemRequest getItemRequest = GetItemRequest.builder()
-                .tableName(tableName)
-                .key(Map.of("tableNumber", AttributeValue.builder().n(tableNumber).build()))
-                .build();
-
-        GetItemResponse getItemResponse = dynamoDbClient.getItem(getItemRequest);
-        return getItemResponse.hasItem();
-    }
 
     private APIGatewayProxyResponseEvent handleReservationsGet(APIGatewayProxyRequestEvent event, Context context) {
         context.getLogger().log("Fetching all reservations...");
@@ -605,6 +591,7 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
     }
 
     private boolean isTableAlreadyReserved(String tableNumber, String date, String slotTimeStart, String slotTimeEnd, Context context) {
+        context.getLogger().log("Reservation Post: isTableAlreadyReserved method with table Number: "+tableNumber);
         String tableName = System.getenv("reservation");
 
         Map<String, AttributeValue> expressionValues = new HashMap<>();
@@ -624,6 +611,18 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
 
         ScanResponse scanResponse = dynamoDbClient.scan(scanRequest);
         return !scanResponse.items().isEmpty();
+    }
+
+    private boolean doesTableExist(String tableNumber, Context context) {
+        context.getLogger().log("Reservation Post, Checking whether table exist or not with tableNumber: "+tableNumber);
+        String tableName = System.getenv("tables_table");
+        GetItemRequest getItemRequest = GetItemRequest.builder()
+                .tableName(tableName)
+                .key(Map.of("tableNumber", AttributeValue.builder().n(tableNumber).build()))
+                .build();
+
+        GetItemResponse getItemResponse = dynamoDbClient.getItem(getItemRequest);
+        return getItemResponse.hasItem();
     }
 
 
