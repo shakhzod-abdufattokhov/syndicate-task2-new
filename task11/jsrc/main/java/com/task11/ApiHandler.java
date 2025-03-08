@@ -193,7 +193,7 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
 
             // Generate UUID for reservation ID
             String reservationId = UUID.randomUUID().toString();
-            String tableName = System.getenv("RESERVATION_TABLE");  // Ensure this env variable is correct
+            String tableName = System.getenv("reservation");  // Ensure this env variable is correct
 
             // Ensure primary key matches table schema
             Map<String, AttributeValue> reservation = new HashMap<>();
