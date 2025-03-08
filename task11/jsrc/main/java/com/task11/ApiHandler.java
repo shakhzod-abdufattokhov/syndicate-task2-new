@@ -238,7 +238,6 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
             Map<String, String> responseBody = new HashMap<>();
             responseBody.put("reservationId", reservationId);
 
-            tablesIds.add(tableNumber);
             return new APIGatewayProxyResponseEvent()
                     .withStatusCode(200)
                     .withBody(objectMapper.writeValueAsString(responseBody))
@@ -354,7 +353,7 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
 
             String responseString = objectMapper.writeValueAsString(responseBody);
             context.getLogger().log("Response created: " + responseString);
-
+            tablesIds.add(String.valueOf(body.get("number")));
             return successResponse(responseString, context);
         } catch (Exception e) {
             context.getLogger().log("Error saving table: " + e.getMessage());
@@ -616,7 +615,7 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
     }
 
     private boolean doesTableExist(String tableNumber, Context context) {
-        context.getLogger().log("Checking if a table with tableNumber " + tableNumber + " exists.");
+        context.getLogger().log("Checking if a table with tableNumber " + tableNumber + " exists. Table ids: "+ tablesIds.toString() );
 
         for(String number: tablesIds){
             if(number.equals(tableNumber)){
