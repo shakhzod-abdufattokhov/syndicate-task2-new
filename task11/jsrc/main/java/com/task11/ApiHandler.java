@@ -4,6 +4,7 @@ import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyRequestEvent;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyResponseEvent;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.syndicate.deployment.annotations.environment.EnvironmentVariable;
@@ -18,15 +19,9 @@ import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.cognitoidentityprovider.CognitoIdentityProviderClient;
 import software.amazon.awssdk.services.cognitoidentityprovider.model.*;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
-import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
-import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
-import software.amazon.awssdk.services.dynamodb.model.ScanRequest;
-import software.amazon.awssdk.services.dynamodb.model.ScanResponse;
+import software.amazon.awssdk.services.dynamodb.model.*;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.regex.Pattern;
 
 import static com.syndicate.deployment.model.environment.ValueTransformer.USER_POOL_NAME_TO_CLIENT_ID;
@@ -76,6 +71,14 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
         context.getLogger().log("Received request: Path = " + path + ", Method = " + httpMethod);
 
         try {
+            if (path.startsWith("/tables/")) {
+                if ("GET".equalsIgnoreCase(httpMethod)) {
+                    return handleTableGetById(event, context, path.substring(8)); // Extract ID
+                } else {
+                    return invalidMethodResponse(context);
+                }
+            }
+            
             switch (path) {
                 case "/signup":
                     return "POST".equalsIgnoreCase(httpMethod) ? handleSignUp(event, context) : invalidMethodResponse(context);
@@ -89,12 +92,181 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
                     }else{
                         return invalidMethodResponse(context);
                     }
+                case "/reservations":
+                    if (httpMethod.equalsIgnoreCase("GET")) {
+                        return handleReservationsGet(event, context);
+                    }else if(httpMethod.equalsIgnoreCase("POST")){
+                        return handleReservationsPost(event, context);
+                    }else{
+                        return invalidMethodResponse(context);
+                    }    
                 default:
                     return errorResponse(400, "Invalid path: " + path, context);
             }
         } catch (Exception e) {
             context.getLogger().log("Error: " + e.getMessage());
             return errorResponse(500, "Server error: " + (e.getMessage() != null ? e.getMessage() : "Unknown error at path: " + path), context);
+        }
+    }
+
+    private APIGatewayProxyResponseEvent handleTableGetById(APIGatewayProxyRequestEvent event, Context context, String tableId) {
+        context.getLogger().log("Fetching table with ID: " + tableId);
+
+        String token = event.getHeaders().get("Authorization");
+        if (token == null || !token.startsWith("Bearer ")) {
+            context.getLogger().log("Missing or invalid Authorization header.");
+            return errorResponse(401, "Missing or invalid Authorization header", context);
+        }
+
+        token = token.substring(7);
+        if (!isTokenValid(token, context)) {
+            context.getLogger().log("Unauthorized access attempt with invalid token.");
+            return errorResponse(401, "Unauthorized: Invalid token", context);
+        }
+
+        try {
+            String tableName = System.getenv("table");
+            context.getLogger().log("DynamoDB table name: " + tableName);
+
+            Map<String, AttributeValue> key = new HashMap<>();
+            key.put("id", AttributeValue.builder().s(tableId).build());
+
+            GetItemRequest getItemRequest = GetItemRequest.builder()
+                    .tableName(tableName)
+                    .key(key)
+                    .build();
+
+            GetItemResponse response = dynamoDbClient.getItem(getItemRequest);
+
+            if (!response.hasItem()) {
+                context.getLogger().log("Table not found: " + tableId);
+                return errorResponse(404, "Table not found", context);
+            }
+
+            Map<String, AttributeValue> item = response.item();
+
+            // Construct the response JSON
+            Map<String, Object> responseBody = new HashMap<>();
+            responseBody.put("id", item.get("id").s());
+            responseBody.put("number", Integer.parseInt(item.get("number").n()));
+            responseBody.put("places", Integer.parseInt(item.get("places").n()));
+            responseBody.put("isVip", item.get("isVip").bool());
+            responseBody.put("minOrder", item.containsKey("minOrder") ? Integer.parseInt(item.get("minOrder").n()) : 0);
+
+            String jsonResponse = objectMapper.writeValueAsString(responseBody);
+            context.getLogger().log("Successfully fetched table: " + jsonResponse);
+
+            return new APIGatewayProxyResponseEvent()
+                    .withStatusCode(200)
+                    .withBody(jsonResponse)
+                    .withHeaders(Map.of("Content-Type", "application/json"));
+
+        } catch (Exception e) {
+            context.getLogger().log("Error fetching table: " + e.getMessage());
+            return errorResponse(500, "Server error: " + e.getMessage(), context);
+        }
+    }
+
+
+    private APIGatewayProxyResponseEvent handleReservationsPost(APIGatewayProxyRequestEvent event, Context context) {
+        context.getLogger().log("Processing new reservation request...");
+
+        // Validate Authorization Token
+        String token = event.getHeaders().get("Authorization");
+        if (token == null || !token.startsWith("Bearer ")) {
+            return errorResponse(401, "Missing or invalid Authorization header", context);
+        }
+
+        token = token.substring(7);
+        if (!isTokenValid(token, context)) {
+            return errorResponse(401, "Unauthorized: Invalid token", context);
+        }
+
+        try {
+            Map<String, Object> requestBody = objectMapper.readValue(event.getBody(), new TypeReference<>() {});
+            String tableNumber = requestBody.get("tableNumber").toString();
+            String clientName = requestBody.get("clientName").toString();
+            String phoneNumber = requestBody.get("phoneNumber").toString();
+            String date = requestBody.get("date").toString();
+            String slotTimeStart = requestBody.get("slotTimeStart").toString();
+            String slotTimeEnd = requestBody.get("slotTimeEnd").toString();
+
+            // Check for conflicts in reservations
+//            if (isTableAlreadyReserved(tableNumber, date, slotTimeStart, slotTimeEnd, context)) {
+//                return errorResponse(400, "Table is already reserved for the selected time slot", context);
+//            }
+
+            String reservationId = UUID.randomUUID().toString();
+            String tableName = System.getenv("reservation");
+
+            Map<String, AttributeValue> reservation = new HashMap<>();
+            reservation.put("reservationId", AttributeValue.builder().s(reservationId).build());
+            reservation.put("tableNumber", AttributeValue.builder().n(tableNumber).build());
+            reservation.put("clientName", AttributeValue.builder().s(clientName).build());
+            reservation.put("phoneNumber", AttributeValue.builder().s(phoneNumber).build());
+            reservation.put("date", AttributeValue.builder().s(date).build());
+            reservation.put("slotTimeStart", AttributeValue.builder().s(slotTimeStart).build());
+            reservation.put("slotTimeEnd", AttributeValue.builder().s(slotTimeEnd).build());
+
+            PutItemRequest putItemRequest = PutItemRequest.builder()
+                    .tableName(tableName)
+                    .item(reservation)
+                    .build();
+
+            dynamoDbClient.putItem(putItemRequest);
+
+            Map<String, String> responseBody = new HashMap<>();
+            responseBody.put("reservationId", reservationId);
+
+            return new APIGatewayProxyResponseEvent()
+                    .withStatusCode(200)
+                    .withBody(objectMapper.writeValueAsString(responseBody))
+                    .withHeaders(Map.of("Content-Type", "application/json"));
+        } catch (Exception e) {
+            return errorResponse(500, "Server error: " + e.getMessage(), context);
+        }
+    }
+
+    private APIGatewayProxyResponseEvent handleReservationsGet(APIGatewayProxyRequestEvent event, Context context) {
+        context.getLogger().log("Fetching all reservations...");
+
+        // Validate Authorization Token
+        String token = event.getHeaders().get("Authorization");
+        if (token == null || !token.startsWith("Bearer ")) {
+            return errorResponse(401, "Missing or invalid Authorization header", context);
+        }
+
+        token = token.substring(7);
+        if (!isTokenValid(token, context)) {
+            return errorResponse(401, "Unauthorized: Invalid token", context);
+        }
+
+        try {
+            String tableName = System.getenv("reservation");
+            ScanRequest scanRequest = ScanRequest.builder().tableName(tableName).build();
+            ScanResponse scanResponse = dynamoDbClient.scan(scanRequest);
+
+            List<Map<String, Object>> reservations = new ArrayList<>();
+            for (Map<String, AttributeValue> item : scanResponse.items()) {
+                Map<String, Object> reservation = new HashMap<>();
+                reservation.put("tableNumber", Integer.parseInt(item.get("tableNumber").n()));
+                reservation.put("clientName", item.get("clientName").s());
+                reservation.put("phoneNumber", item.get("phoneNumber").s());
+                reservation.put("date", item.get("date").s());
+                reservation.put("slotTimeStart", item.get("slotTimeStart").s());
+                reservation.put("slotTimeEnd", item.get("slotTimeEnd").s());
+                reservations.add(reservation);
+            }
+
+            Map<String, Object> responseBody = new HashMap<>();
+            responseBody.put("reservations", reservations);
+
+            return new APIGatewayProxyResponseEvent()
+                    .withStatusCode(200)
+                    .withBody(objectMapper.writeValueAsString(responseBody))
+                    .withHeaders(Map.of("Content-Type", "application/json"));
+        } catch (Exception e) {
+            return errorResponse(500, "Server error: " + e.getMessage(), context);
         }
     }
 
@@ -396,4 +568,6 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
                 .withHeaders(Map.of("Content-Type", "application/json"))
                 .withBody("{\"error\": \"" + message + "\"}");
     }
+
+
 }
