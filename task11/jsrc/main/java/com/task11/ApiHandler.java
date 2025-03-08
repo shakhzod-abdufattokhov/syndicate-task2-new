@@ -616,7 +616,7 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
     private boolean doesTableExist(String tableNumber, Context context) {
         context.getLogger().log("Checking whether table exists with tableNumber: " + tableNumber);
 
-        String tableName = System.getenv("TABLE_NAME");
+        String tableName = System.getenv("table");
 
         try {
             ScanRequest scanRequest = ScanRequest.builder()
