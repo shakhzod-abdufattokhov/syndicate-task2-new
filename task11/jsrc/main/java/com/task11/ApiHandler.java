@@ -147,8 +147,8 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
 
             // Construct the response JSON
             Map<String, Object> responseBody = new HashMap<>();
-            responseBody.put("id", item.get("id").s());
-            responseBody.put("number", Integer.parseInt(item.get("number").n()));
+            responseBody.put("id", item.get("number").s());
+            responseBody.put("number", Integer.parseInt(item.get("id").n()));
             responseBody.put("places", Integer.parseInt(item.get("places").n()));
             responseBody.put("isVip", item.get("isVip").bool());
             responseBody.put("minOrder", item.containsKey("minOrder") ? Integer.parseInt(item.get("minOrder").n()) : 0);
@@ -191,16 +191,14 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
             String slotTimeStart = requestBody.get("slotTimeStart").toString();
             String slotTimeEnd = requestBody.get("slotTimeEnd").toString();
 
-            // Check for conflicts in reservations
-//            if (isTableAlreadyReserved(tableNumber, date, slotTimeStart, slotTimeEnd, context)) {
-//                return errorResponse(400, "Table is already reserved for the selected time slot", context);
-//            }
-
+            // Generate UUID for reservation ID
             String reservationId = UUID.randomUUID().toString();
-            String tableName = System.getenv("reservation");
+            String tableName = System.getenv("RESERVATION_TABLE");  // Ensure this env variable is correct
 
+            // Ensure primary key matches table schema
             Map<String, AttributeValue> reservation = new HashMap<>();
-            reservation.put("reservationId", AttributeValue.builder().s(reservationId).build());
+            reservation.put("id", AttributeValue.builder().s(reservationId).build());  // Ensure key matches DB schema
+            reservation.put("reservationId", AttributeValue.builder().s(reservationId).build()); // Optional
             reservation.put("tableNumber", AttributeValue.builder().n(tableNumber).build());
             reservation.put("clientName", AttributeValue.builder().s(clientName).build());
             reservation.put("phoneNumber", AttributeValue.builder().s(phoneNumber).build());
@@ -208,6 +206,7 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
             reservation.put("slotTimeStart", AttributeValue.builder().s(slotTimeStart).build());
             reservation.put("slotTimeEnd", AttributeValue.builder().s(slotTimeEnd).build());
 
+            // Put item into DynamoDB
             PutItemRequest putItemRequest = PutItemRequest.builder()
                     .tableName(tableName)
                     .item(reservation)
@@ -215,6 +214,7 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
 
             dynamoDbClient.putItem(putItemRequest);
 
+            // Response
             Map<String, String> responseBody = new HashMap<>();
             responseBody.put("reservationId", reservationId);
 
@@ -222,10 +222,12 @@ public class ApiHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
                     .withStatusCode(200)
                     .withBody(objectMapper.writeValueAsString(responseBody))
                     .withHeaders(Map.of("Content-Type", "application/json"));
+
         } catch (Exception e) {
             return errorResponse(500, "Server error: " + e.getMessage(), context);
         }
     }
+
 
     private APIGatewayProxyResponseEvent handleReservationsGet(APIGatewayProxyRequestEvent event, Context context) {
         context.getLogger().log("Fetching all reservations...");
