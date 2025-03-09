@@ -90,7 +90,7 @@
   },
   "api-ui-hoster": {
     "resource_type": "s3_bucket",
-    "acl": "public-read",
+    "acl": "private",
     "cors": [],
     "policy": {
       "Version": "2012-10-17",
@@ -108,7 +108,7 @@
           "Condition": {
             "IpAddress": {
               "aws:SourceIp": [
-                "193.104.179.204/32"
+                "18.197.177.98/32"
               ]
             }
           }
@@ -116,10 +116,10 @@
       ]
     },
     "public_access_block": {
-      "block_public_acls": false,
-      "ignore_public_acls": false,
-      "block_public_policy": false,
-      "restrict_public_buckets": false
+      "block_public_acls": true,
+      "ignore_public_acls": true,
+      "block_public_policy": true,
+      "restrict_public_buckets": true
     },
     "tags": {},
     "website_hosting": {
