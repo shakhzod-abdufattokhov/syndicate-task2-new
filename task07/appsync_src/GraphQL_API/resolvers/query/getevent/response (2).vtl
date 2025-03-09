@@ -1,0 +1,20 @@
+#if( $ctx.result )
+    #set($payLoad = $ctx.result.payLoad)
+    #set($returnedPayload = {
+        "meta": {
+            "key1": $payLoad.meta.key1,
+            "key2": $payLoad.meta.key2
+        }
+    })
+
+    #set($returnedEvent = {
+        "id": $ctx.result.id,
+        "userId": $ctx.result.userId,
+        "createdAt": $ctx.result.createdAt,
+        "payLoad": $returnedPayload
+    })
+
+    $util.toJson($returnedEvent)
+#else
+    $util.toJson(null)
+#end

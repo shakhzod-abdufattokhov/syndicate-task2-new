@@ -1,0 +1,25 @@
+#set($parsedPayload = $ctx.args.payLoad)
+
+#if (!$parsedPayload.meta || !$parsedPayload.meta.key1 || !$parsedPayload.meta.key2)
+    $util.error("Invalid payload structure", "ValidationError")
+#end
+
+#set($dynamoPayload = {
+    "meta": {
+        "key1": $parsedPayload.meta.key1,
+        "key2": $parsedPayload.meta.key2
+    }
+})
+
+{
+    "version": "2018-05-29",
+    "operation": "PutItem",
+    "key": {
+        "id": $util.dynamodb.toDynamoDBJson($util.autoId())
+    },
+    "attributeValues": {
+        "userId": $util.dynamodb.toDynamoDBJson($ctx.args.userId),
+        "createdAt": $util.dynamodb.toDynamoDBJson($util.time.nowISO8601()),
+        "payLoad": $util.dynamodb.toDynamoDBJson($dynamoPayload)
+    }
+}
