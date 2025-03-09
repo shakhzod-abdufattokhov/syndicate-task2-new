@@ -90,7 +90,7 @@
   },
   "api-ui-hoster": {
     "resource_type": "s3_bucket",
-    "acl": "private",
+    "acl": "public-read",
     "cors": [],
     "policy": {
       "Version": "2012-10-17",
