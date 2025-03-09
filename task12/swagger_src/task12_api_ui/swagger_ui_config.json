@@ -1,5 +1,5 @@
 {
-  "name": "task12_api_ui",
+  "name": "task12_swagger_api_ui",
   "resource_type": "swagger_ui",
   "path_to_spec": "./export/mz0j53retb_oas_v3.json",
   "target_bucket": "task12_api_ui"
