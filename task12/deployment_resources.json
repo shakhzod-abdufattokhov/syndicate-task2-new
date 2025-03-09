@@ -88,7 +88,7 @@
     "autoscaling": [],
     "tags": {}
   },
-  "api-ui-hoster": {
+  "task12_api_ui": {
     "resource_type": "s3_bucket",
     "acl": "private",
     "cors": [],
@@ -103,7 +103,7 @@
             "s3:GetObject"
           ],
           "Resource": [
-            "arn:aws:s3:::api-ui-hoster/*"
+            "arn:aws:s3:::task12_api_ui/*"
           ],
           "Condition": {
             "IpAddress": {
